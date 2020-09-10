@@ -502,7 +502,7 @@
          </rect>
         </property>
         <property name="text">
-         <string>Show residue</string>
+         <string>Show</string>
         </property>
        </widget>
       </widget>

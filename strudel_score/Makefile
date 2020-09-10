@@ -14,7 +14,8 @@ OS = $(patsubst CYGWIN_NT%,CYGWIN_NT,$(shell uname -s))
 # We use ?= to let CHIMERAX_APP environment variable override
 ifeq ($(OS),Darwin)
 # Mac
-CHIMERAX_APP ?= /Applications/ChimeraX_daily.app
+CHIMERAX_APP ?= /Applications/ChimeraX-1.0.app
+# CHIMERAX_APP ?= /Applications/ChimeraX_Daily.app
 endif
 ifeq ($(OS),CYGWIN_NT)
 # Windows
@@ -27,15 +28,15 @@ CHIMERAX_EXE = $(CHIMERAX_APP)/bin/ChimeraX.exe
 endif
 ifeq ($(OS),Darwin)
 CHIMERAX_EXE = $(CHIMERAX_APP)/Contents/bin/ChimeraX
-# PY_EXE = $(CHIMERAX_APP)/Contents/bin/python3.7
-# PIP_EXE = $(CHIMERAX_APP)/Contents/bin/pip3
+PY_EXE = $(CHIMERAX_APP)/Contents/bin/python3.7
+PIP_EXE = $(CHIMERAX_APP)/Contents/bin/pip3
 # $(warning VAR is $(PY_EXE))
 endif
 ifeq ($(OS),Linux)
 CHIMERAX_EXE = $(shell which chimerax)
-# CHIMERAX_BIN=$(dir $(CHIMERAX_EXE))
-# PY_EXE = $(CHIMERAX_BIN)python3.7
-# TMP = $(subst bin/,, $(CHIMERAX_BIN))
+CHIMERAX_BIN=$(dir $(CHIMERAX_EXE))
+PY_EXE = $(CHIMERAX_BIN)python3.7
+TMP = $(subst bin/,, $(CHIMERAX_BIN))
 PIP_EXE = $(TMP)lib/python3.7/site-packages/pip
 
 endif
@@ -57,6 +58,7 @@ install app-install: $(WHEEL)
 #	$(PY_EXE) $(PIP_EXE) install pandas;
 #	$(PY_EXE) $(PIP_EXE) install biopython;
 #	$(PY_EXE) $(PIP_EXE) install mrcfile;
+	$(PY_EXE) $(PIP_EXE) install --upgrade $(wildcard lib/*.whl);
 	$(CHIMERAX_EXE) -m PyQt5.pyrcc_main -o src/resources/resources_rc.py src/resources/resources.qrc; \
 	$(CHIMERAX_EXE) --nogui --cmd "devel install . ; exit"
 
