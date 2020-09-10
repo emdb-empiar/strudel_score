@@ -143,7 +143,6 @@ class StrudelScore(Base):
         self.active_chain = None
         self.active_residue = None
         self.active_residue_data = None
-        self.right_plot_size = None
         self.active_res_map_obj = None
         self.active_res_model_obj = None
         self.open_motifs = []
@@ -158,7 +157,7 @@ class StrudelScore(Base):
             self.draw_left_plot_vline()
         self.ui.show()
 
-    def resised_actions(self, event):
+    def resized_actions(self, event):
         if self.df is not None:
             self.draw_right_plot()
 
@@ -185,7 +184,7 @@ class StrudelScore(Base):
         w = self.ui.width()
         self.ui.plots_splitter.setSizes([int(w * .8), int(w * .2)])
         self.set_labels_style()
-        self.mw.resizeEvent = self.resised_actions
+        self.mw.resizeEvent = self.resized_actions
 
         self.ui.same_map_checkBox.stateChanged.connect(self.update_motifs_view)
         self.ui.same_model_checkBox.stateChanged.connect(self.update_motifs_view)
@@ -302,7 +301,6 @@ class StrudelScore(Base):
         if proj_path:
             self.csv_paths = {}
             self.set_paths(proj_path)
-            self.right_plot_size = (self.right_plot_canvas.width(), self.right_plot_canvas.height())
             self.set_data()
             self.load_map_model()
             self.inject_data()
@@ -444,7 +442,6 @@ class StrudelScore(Base):
         self.ui.mean_score_scrollArea.setFixedHeight(h)
 
     def fill_selectors(self):
-        print("fill selectors called")
         # Lib selector
         try:
             self.ui.lib_comboBox.currentIndexChanged.disconnect(self.switch_lib)
@@ -453,14 +450,12 @@ class StrudelScore(Base):
         self.ui.lib_comboBox.clear()
         self.ui.lib_comboBox.addItems(self.all_libs)
         self.ui.lib_comboBox.currentIndexChanged.connect(self.switch_lib)
-        # self.ui.lib_label.setText(f'<font style="{self.P.titles_style}">Select motif library</font>')
         # Chain selector
         try:
             self.ui.chain_comboBox.currentIndexChanged.disconnect(self.switch_chain)
         except TypeError:
             pass
         self.ui.chain_comboBox.clear()
-        print('all chains (fill selectors)', self.all_chains)
         self.ui.chain_comboBox.addItems(self.all_chains)
 
         self.ui.chain_comboBox.currentIndexChanged.connect(self.switch_chain)
@@ -503,7 +498,6 @@ class StrudelScore(Base):
         self.update_left_plots()
         self.clear_residue_data()
         self.active_residue = self.current_chain_data[self.k.RES_NR].iloc[0]
-
         self.draw_right_plot()
         self.draw_left_plot_vline()
 
@@ -511,19 +505,15 @@ class StrudelScore(Base):
         self.open_motifs = []
         self.active_res_map_obj = None
         self.active_res_model_obj = None
-        self.run_x('close #3-100')
+        if CHIMERA_MODE:
+            self.run_x('close #3-100')
 
     def create_left_plots_container(self):
         ui = self.ui
         grid = QGridLayout()
-        # y_label = ui.y_left_plot_label
         y_label = QLabel()
         y_label.setPicture(self.create_left_axis_y_label())
         y_label.show()
-
-        scroll_area = ui.lef_plot_scrollArea
-
-        # x_label = ui.x_left_plot_label
         x_label = QLabel()
         txt_lst = self.P.x_axis_text
         x_label_text = f'<font style="{self.P.grey_text} {self.P.left_plot_axis_font}">{txt_lst[0]} </font>' \
@@ -532,12 +522,12 @@ class StrudelScore(Base):
         x_label.setAlignment(QtCore.Qt.AlignHCenter)
         grid.setSpacing(5)
         grid.addWidget(y_label, 0, 0)
+        scroll_area = ui.lef_plot_scrollArea
         grid.addWidget(scroll_area, 0, 1)
         grid.addWidget(x_label, 1, 1)
         grid.setContentsMargins(12, 6, 0, 12)
         lf = ui.left_plot_frame
-        # ui.left_plot_frame.setLayout(grid)
-        ui.verticalLayout_6.addLayout(grid)
+        ui.left_plot_frame_verticalLayout.addLayout(grid)
         self.left_plots_vbox = self.ui.left_plot_scrollarea_verticalLayout
         p = lf.palette()
         lf.setAutoFillBackground(True)
@@ -549,14 +539,10 @@ class StrudelScore(Base):
         self.right_ax.tick_params(labelsize=p['labelsize'], length=p['length'], pad=p['pad'], width=p['width'])
         [self.right_ax.spines[i].set_linewidth(p['width']) for i in self.right_ax.spines.keys()]
 
-        vlayout = self.ui.right_plot_frame_verticalLayout
-
         left_arrow = self.ui.left_pushButton
         right_arrow = self.ui.right_pushButton
         left_red = self.ui.left_red_pushButton
         right_red = self.ui.right_red_pushButton
-
-        vlayout.insertWidget(1, self.right_plot_canvas)
 
         self.ui.right_plot_show_pushButton.clicked.connect(self.view_residue)
         left_arrow.clicked.connect(self.navigate_residue_left)
@@ -564,6 +550,8 @@ class StrudelScore(Base):
         left_red.clicked.connect(self.navigate_red_residue_left)
         right_red.clicked.connect(self.navigate_red_residue_right)
 
+        vlayout = self.ui.right_plot_frame_verticalLayout
+        vlayout.insertWidget(1, self.right_plot_canvas)
         vlayout.setContentsMargins(0, 0, 0, 0)
         frame = self.ui.right_plot_frame
         p = frame.palette()
@@ -635,11 +623,11 @@ class StrudelScore(Base):
         y_range = self.left_axis_selector.currentText()
         self.current_chain_data = self.get_chain_data(self.df, self.active_chain)
         res = int(self.ui.res_per_row_comboBox.currentText())
-        all_left = self.all_left_plots(self.current_chain_data,
-                                       max_res=res,
-                                       red_diff=self.P.red_difference,
-                                       blue_threshold=self.P.blue_threshold,
-                                       y_range=y_range)
+        all_left = self.draw_left_plots(self.current_chain_data,
+                                        max_res=res,
+                                        red_diff=self.P.red_difference,
+                                        blue_threshold=self.P.blue_threshold,
+                                        y_range=y_range)
         # Clear left plots
         for i in reversed(range(self.left_plots_vbox.count())):
             self.left_plots_vbox.itemAt(i).widget().setParent(None)
@@ -648,7 +636,7 @@ class StrudelScore(Base):
             plot.setMinimumHeight(self.P.left_plot_min_h)
             self.left_plots_vbox.addWidget(plot)
 
-    def all_left_plots(self, data, max_res=60, red_diff=0.05, blue_threshold=0.7, y_range='Auto'):
+    def draw_left_plots(self, data, max_res=60, red_diff=0.05, blue_threshold=0.7, y_range='Auto'):
         all_plots = []
         nr_list = data[self.k.RES_NR].tolist()
         corr_cc_list = data[self.k.SAME_TYPE_CC].tolist()
@@ -673,7 +661,7 @@ class StrudelScore(Base):
             y_min = 0.8
         else:
             y_min = min(corr_cc_list) - 0.2
-            # y_max = min(max(top_cc_list) + 0.1, y_max)
+
         if y_min is None:
             y_min = 0
 
@@ -769,26 +757,17 @@ class StrudelScore(Base):
     def update_right_plot(self, event):
         thisline = event.artist
         xdata = thisline.get_xdata()
-        ydata = thisline.get_ydata()
         ind = event.ind
-        # points = tuple(zip(xdata[ind], ydata[ind]))
         self.active_residue = xdata[ind][0]
         self.draw_right_plot()
         self.draw_left_plot_vline()
 
     def draw_right_plot(self, max_res_display=20, y_max=1):
-        if self.right_plot_size is None:
-            width = self.right_plot_canvas.width()
-            height = self.right_plot_canvas.height()
-        else:
-            width = self.right_plot_size[0]
-            height = self.right_plot_size[1]
-            self.right_plot_size = None
-
+        width = self.right_plot_canvas.width()
+        height = self.right_plot_canvas.height()
         self.right_ax.clear()
+
         r_nr = self.active_residue
-        text_size = self.P.r_lbl_size
-        xlim = 1
         r = self.current_chain_data[self.current_chain_data[self.k.RES_NR] == r_nr]
         self.active_residue_data = r
         same_type = r[self.k.RES_TYPE].tolist()[0].upper()
@@ -816,26 +795,26 @@ class StrudelScore(Base):
         else:
             y_min = min(y_lst) - 0.05
 
+        text_size = self.P.r_lbl_size
         y_lbls, text_size = find_y_label_coordinates(y_lst, [y_min, y_max], height, text_size, spacing=1)
-        text_w = text_size * xlim / width * 4
+        text_w = text_size / width * 4
 
         # Consider using dash option for labels
         for i in range(len(y_lbls)):
-            if y_lbls[i] > y_min:
-                if same_type != y_txt[i]:
-                    self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3, c='r')
-                    self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c='r')
-                    self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color='r', size=text_size,
-                                       picker=text_size, verticalalignment='center', horizontalalignment='left')
-                else:
-                    self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3, c='g')
-                    self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c='g')
-                    self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color='g', size=text_size,
-                                       picker=text_size, verticalalignment='center', horizontalalignment='left')
-                for motif in self.open_motifs:
-                    if y_txt[i].lower() == motif.type and motif.show:
-                        self.right_ax.text(r_nr - 3 * text_w, y_lbls[i], '*', size=text_size, color=self.P.vline_color,
-                                           verticalalignment='center')
+            if same_type != y_txt[i]:
+                self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3, c='r')
+                self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c='r')
+                self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color='r', size=text_size,
+                                   picker=text_size, verticalalignment='center', horizontalalignment='left')
+            else:
+                self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3, c='g')
+                self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c='g')
+                self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color='g', size=text_size,
+                                   picker=text_size, verticalalignment='center', horizontalalignment='left')
+            for motif in self.open_motifs:
+                if y_txt[i].lower() == motif.type and motif.show:
+                    self.right_ax.text(r_nr - 3 * text_w, y_lbls[i], '*', size=text_size, color=self.P.vline_color,
+                                       verticalalignment='center')
 
         self.right_ax.set_ylim(y_min, y_max)
         self.right_ax.set_xlim(r_nr - 0.7, r_nr + 0.3)
@@ -983,13 +962,11 @@ class StrudelScore(Base):
                 csv_path = self.csv_paths[sorted(self.csv_paths.keys())[0]]
             self.df = self.read_data(csv_path)
             self.all_chains = self.get_chain_list(self.df)
-            print('All chains (set data)', self.all_chains)
             self.active_chain = self.all_chains[0]
-            print('active chain (set data)', self.active_chain)
             self.current_chain_data = self.get_chain_data(self.df, self.active_chain)
             self.active_residue = self.current_chain_data[self.k.RES_NR].iloc[0]
             self.right_plot_min_max = self.get_min_max_correlation()
-            self.per_chain_mean_cc = self.get_per_chain_mean_cc_and_red_perc()
+            self.per_chain_mean_cc = self.get_per_chain_mean_cc_and_red_perc(self.P.red_difference)
             self.update_chain_cc_lbls()
 
     def read_data(self, csv_path):
@@ -1017,7 +994,7 @@ class StrudelScore(Base):
                 all_min.append(value.min())
         return min(all_min), max(all_max)
 
-    def get_per_chain_mean_cc_and_red_perc(self, max_diff=0.05):
+    def get_per_chain_mean_cc_and_red_perc(self, max_diff):
         cc_dict = {}
         for chain in self.all_chains:
             chain_data = self.get_chain_data(self.df, chain)
@@ -1031,21 +1008,16 @@ class StrudelScore(Base):
             self.no_chimera_message()
             return
         if self.active_residue_data is None:
-            print('No data yet')
             return
         r_nr = int(self.active_residue)
         c = self.active_chain
         res = self.model_obj[0][c][r_nr]
         res_map_path, res_model_path = self.chop_residue(res)
-        # res_map = self.run_x(f'open {res_map_path}')
         res_map = self.open_model(res_map_path)
         self.run_x(f'volume #{res_map.id_string} sdLevel {SD_LEVEL}')
-        # res_model = self.run_x(f'open {res_model_path}')
         res_model = self.open_model(res_model_path)
         self.run_x(f'size #{res_model.id_string} stickRadius 0.055')
         self.run_x(f'color #{res_map.id_string} #B2B2B2')
-        # self.run_x(f'align #{res_model.id_string}@c,ca,n to #{self.model_chim.id_string}/{c}:{r_nr}@c,ca,n')
-        # self.run_x(f'view position #{res_map.id_string} sameAsModels #{res_model.id_string}')
         self.run_x(f'transparency #{res_map.id_string} 70 s')
         self.run_x(f'hide #{res_model.id_string} models')
 
@@ -1060,10 +1032,8 @@ class StrudelScore(Base):
         c = self.active_chain
         res = self.model_obj[0][c][r_nr]
         res_map_path, res_model_path = self.chop_residue_environ_sensitive(res)
-        # res_map = self.run_x(f'open {res_map_path}')
         res_map = self.open_model(res_map_path)
         self.run_x(f'volume #{res_map.id_string} sdLevel {SD_LEVEL}')
-        # res_model = self.run_x(f'open {res_model_path}')
         self.run_x(f'color #{res_map.id_string} #B9BF6C')
         self.run_x(f'transparency #{res_map.id_string} 70 s')
 
@@ -1072,7 +1042,6 @@ class StrudelScore(Base):
             self.no_chimera_message()
             return
         if self.active_residue_data is None:
-            print('No data yet')
             return
         self.clear_rotamers()
         r_nr = int(self.active_residue)
@@ -1093,12 +1062,10 @@ class StrudelScore(Base):
 
         for model, _ in model_rmsds:
             model_path = os.path.join(self.active_lib_path, model)
-            # res_model = self.run_x(f'open {model_path}')
             res_model = self.open_model(model_path)
             self.run_x(f'align #{res_model.id_string}@c,ca,n to #{self.model_chim.id_string}/{c}:{r_nr}@c,ca,n')
             self.run_x(f'size #{res_model.id_string} stickRadius 0.055')
             map_path = os.path.join(self.active_lib_path, model.split('.')[0] + '.mrc')
-            # res_map = self.run_x(f'open {map_path}')
             res_map = self.open_model(map_path)
             self.run_x(f'volume #{res_map.id_string} sdLevel {SD_LEVEL}')
             self.run_x(f'view position #{res_map.id_string} sameAsModels #{res_model.id_string}')
@@ -1154,140 +1121,6 @@ class StrudelScore(Base):
             fin_map = self.chop.chop_soft_radius4(struct, cube_map_obj, self.model_obj, shifts, radius=2, soft_radius=1)
             fin_map.write_map(out_map_path)
         return out_map_path, out_res_path
-
-    def display_in_chimera(self):
-        if not CHIMERA_MODE:
-            self.no_chimera_message()
-            return
-
-        if self.active_residue_data is None:
-            return
-
-        if self.active_lib_path is None:
-            text = f"Sorry no motif library found for {self.lib_selector.currentText()} resolution range\n" \
-                   f"in {self.libs_path}"
-            self.show_mesage('Motif library missing', text)
-
-        r = self.active_residue_data
-        same_type_name = r[self.k.SAME_TYPE_NAME].tolist()[0]
-        top_motif_name = r[self.k.M_TOP_NAME].tolist()[0]
-
-
-        same_type = same_type_name.split('_')[0]
-        top_type = top_motif_name.split('_')[0]
-
-
-        try:
-            same_type_matrix = r[self.k.SAME_TYPE_MATRIX].tolist()[0]
-            top_motif_matrix = r[self.k.M_TOP_MATRIX].tolist()[0]
-        except:
-            same_type_matrix, top_motif_matrix = None, None
-
-        if same_type_name == "ala_rotamer_1":
-            same_type_name = 'ala_rotamer_single-conf'
-        if top_motif_name == "ala_rotamer_1":
-            top_motif_name = 'ala_rotamer_single-conf'
-
-        # superimpose
-        r_nr = int(self.active_residue)
-        c = self.active_chain
-        self.run_x('close #3-100')
-        self.run_x('show #1,2 models')
-        self.run_x(f'color #1 #00FFFF')
-        self.run_x(f'label #{self.model_chim.id_string}/{c}:{r_nr} height 0.4')
-
-        if self.active_lib_path is not None:
-            try:
-                lib_same_map_path = os.path.join(self.active_lib_path, same_type_name + '.mrc')
-                lib_same_model_path = os.path.join(self.active_lib_path, same_type_name + '.cif')
-            except TypeError:
-                pass
-            else:
-                if not same_type_matrix or not top_motif_matrix:
-                    res = self.model_obj[0][c][r_nr]
-                    res_map_path, res_model_path = self.chop_residue(res)
-                    # res_map = self.run_x(f'open {res_map_path}')
-                    res_map = self.open_model(res_map_path)
-                    self.active_res_map_obj = res_map
-                    self.run_x(f'volume #{res_map.id_string} sdLevel {SD_LEVEL}')
-                    # res_model = self.run_x(f'open {res_model_path}')
-                    res_model = self.open_model(res_model_path)
-                    self.active_res_model_obj = res_model
-                    self.run_x(f'color #{res_map.id_string} #B2B2B2')
-                    self.run_x(f'align #{res_model.id_string}@c,ca,n to #{self.model_chim.id_string}/{c}:{r_nr}@c,ca,n')
-                    self.run_x(f'view position #{res_map.id_string} sameAsModels #{res_model.id_string}')
-
-                if os.path.exists(lib_same_map_path) and os.path.exists(lib_same_model_path):
-                    # same_map = self.run_x(f'open {lib_same_map_path}')
-                    same_map = self.open_model(lib_same_map_path)
-                    self.run_x(f'volume #{same_map.id_string} sdLevel {SD_LEVEL} color #26FF53')
-                    # same_model = self.run_x(f'open {lib_same_model_path}')
-                    same_model = self.open_model(lib_same_model_path)
-                    self.run_x(f'color #{same_model.id_string} #26FF53')
-                    if same_type_matrix:
-                        self.run_x(f'view matrix mod #{same_model.id_string},{same_type_matrix}')
-                        self.run_x(f'view matrix mod #{same_map.id_string},{same_type_matrix}')
-                    else:
-                        self.run_x(f'align #{same_model.id_string}@c,ca,n to #{res_model.id_string}/{c}:{r_nr}@c,ca,n')
-                        self.run_x(f'view position #{same_map.id_string} sameAsModels #{same_model.id_string}')
-                        self.run_x(f'fitmap #{same_map.id_string} inMap #{res_map.id_string} metric correlation')
-                        self.run_x(f'view position #{same_model.id_string} sameAsModels #{same_map.id_string}')
-
-                    self.run_x(f'transparency #{same_map.id_string} 70 s')
-                    self.run_x(f'hide #{same_model.id_string} models')
-                    self.run_x(f'hide #{same_map.id_string} models')
-                    self.open_motifs[r[self.k.RES_TYPE].tolist()[0]] = [False, same_map]
-
-                    # self.open_motifs.append(self.open_motif(type=same_type, id=same_map.id_string, shown=))
-                else:
-                    text = f'Missing files in {self.active_lib_path}\n' \
-                           f'{same_type_name + ".mrc"},  {same_type_name + ".cif"}'
-                    self.show_mesage('Motif library missing', text)
-
-            try:
-                lib_top_map_path = os.path.join(self.active_lib_path, top_motif_name + '.mrc')
-                lib_top_model_path = os.path.join(self.active_lib_path, top_motif_name + '.cif')
-            except TypeError:
-                pass
-            else:
-                if top_motif_name != same_type_name:
-                    if os.path.exists(lib_top_map_path) and os.path.exists(lib_top_model_path):
-                        # top_map = self.run_x(f'open {lib_top_map_path}')
-                        top_map = self.open_model(lib_top_map_path)
-                        self.run_x(f'volume #{top_map.id_string} sdLevel {SD_LEVEL} color #FF3837')
-                        # top_model = self.run_x(f'open {lib_top_model_path}')
-                        top_model = self.open_model(lib_top_model_path)
-                        self.run_x(f'color #{top_model.id_string} #FF3837')
-                        if top_motif_matrix:
-                            self.run_x(f'view matrix mod #{top_model.id_string},{top_motif_matrix}')
-                            self.run_x(f'view matrix mod #{top_map.id_string},{top_motif_matrix}')
-                        else:
-                            self.run_x(f'align #{top_model.id_string}@c,ca,n to #{res_model.id_string}/{c}:{r_nr}@c,ca,n')
-                            self.run_x(f'view position #{top_map.id_string} sameAsModels #{top_model.id_string}')
-
-                            self.run_x(f'fitmap #{top_map.id_string} inMap #{res_map.id_string} metric correlation')
-                            self.run_x(f'view position #{top_model.id_string} sameAsModels #{top_map.id_string}')
-                        self.run_x(f'transparency #{top_map.id_string} 70 s')
-                        self.run_x(f'hide #{top_model.id_string} models')
-                        self.run_x(f'hide #{top_map.id_string} models')
-                        self.open_motifs[r[self.k.M_TOP_TYPE].tolist()[0]] = [False, top_map]
-                    else:
-                        text = f'Missing files in {self.active_lib_path}\n' \
-                               f'{top_motif_name + ".mrc"},  {top_motif_name + ".cif"}'
-                        self.show_mesage('Motif library missing', text)
-
-        # self.run_x(f'hide #{res_map.id_string} models')
-        self.run_x(f'view #{self.model_chim.id_string}/{c}:{r_nr}@ca pad 0.7')
-        # self.run_x('cofr #{}@ca'.format(res_model.id_string))
-        self.run_x('size stickRadius 0.03')
-        try:
-            self.run_x(f'transparency #{res_map.id_string} 70 s')
-            self.run_x(f'hide #{res_model.id_string} models')
-        except:
-            pass
-        self.run_x(f'zone #{self.model_chim.id_string}/{c}:{r_nr}@ca surfaceDistance 8 label false')
-        self.run_x('clip near -6')
-        self.run_x('clip far 6')
 
     def view_residue(self):
         if not CHIMERA_MODE:
@@ -1369,9 +1202,7 @@ class StrudelScore(Base):
                                f'{top_motif_name + ".mrc"},  {top_motif_name + ".cif"}'
                         self.show_mesage('Motif library missing', text)
 
-        # self.run_x(f'hide #{res_map.id_string} models')
         self.run_x(f'view #{self.model_chim.id_string}/{c}:{r_nr}@ca pad 0.7')
-        # self.run_x('cofr #{}@ca'.format(res_model.id_string))
         self.run_x('size stickRadius 0.03')
         self.run_x(f'zone #{self.model_chim.id_string}/{c}:{r_nr}@ca surfaceDistance 8 label false')
         self.run_x('clip near -6')
@@ -1380,15 +1211,13 @@ class StrudelScore(Base):
 
     def update_motifs_view(self):
         same_ma = self.ui.same_map_checkBox.isChecked()
-        print('SAME MAP!!!!!!!', same_ma)
         same_mo = self.ui.same_model_checkBox.isChecked()
         top_ma = self.ui.top_map_checkBox.isChecked()
         top_mo = self.ui.top_model_checkBox.isChecked()
-        other_ma = True
-        other_mo = False
+        # other_ma = True
+        # other_mo = False
 
         for motif in self.open_motifs:
-
             if motif.mtp == 'same':
                 motif.show = same_ma
                 if same_ma:
