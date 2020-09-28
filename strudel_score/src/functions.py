@@ -4,7 +4,6 @@ import time
 
 def find_y_label_coordinates(lst, y_range, widget_height, label_size, spacing=0.9):
     lst = [i for i in lst if y_range[0] < i < y_range[1]]
-    start = time.time()
     if len(lst) > 0:
         while label_size > 2:
             text_h = (y_range[1] - y_range[0]) / widget_height * label_size
@@ -13,7 +12,6 @@ def find_y_label_coordinates(lst, y_range, widget_height, label_size, spacing=0.
 
             label_size -= 0.5
             if result is not None:
-                print('time', time.time()-start)
                 return result, label_size
         else:
             return lst, label_size

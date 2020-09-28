@@ -22,18 +22,8 @@ __email__ = 'andrei@ebi.ac.uk'
 __date__ = '2020-05-28'
 
 
-CHIMERA_MODE = True
 from recordtype import recordtype
-try:
-    from chimerax.core.tools import ToolInstance
-    from chimerax.core.commands import Command
-    from chimerax.map.volume import Volume
-    from chimerax.atomic.structure import AtomicStructure
-
-except ImportError:
-    CHIMERA_MODE = False
 from PyQt5 import uic
-from math import fabs
 import shutil
 import os
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -53,7 +43,16 @@ try:
     from .functions import find_y_label_coordinates
 except ModuleNotFoundError:
     from functions import find_y_label_coordinates
-# import functions as func
+
+CHIMERA_MODE = True
+try:
+    from chimerax.core.tools import ToolInstance
+    from chimerax.core.commands import Command
+    from chimerax.map.volume import Volume
+    from chimerax.atomic.structure import AtomicStructure
+
+except ImportError:
+    CHIMERA_MODE = False
 
 SD_LEVEL = 4
 
@@ -288,7 +287,10 @@ class StrudelScore(Base):
     def open_project(self):
         proj_path = None
         set_path = str(QFileDialog.getExistingDirectory())
-        folders = os.listdir(set_path)
+        try:
+            folders = os.listdir(set_path)
+        except FileNotFoundError:
+            return
         for file in folders:
             if file.startswith('vs_'):
                 proj_path = set_path
@@ -342,14 +344,14 @@ class StrudelScore(Base):
             tmp = []
             for res in chain:
                 r_name = res.get_resname().upper()
-                if r_name not in nomenclature.AMINOACID_RESIDUES:
+                if r_name not in nomenclature.AA_RESIDUES_LIST:
                     ligands.append(res)
 
         for chain in self.model_obj[0]:
             tmp = []
             for res in chain:
                 r_name = res.get_resname().upper()
-                if r_name in nomenclature.AMINOACID_RESIDUES:
+                if r_name in nomenclature.AA_RESIDUES_LIST:
                     for atom in res:
                         for res2 in ligands:
                             for atom2 in res2:
@@ -544,7 +546,7 @@ class StrudelScore(Base):
         left_red = self.ui.left_red_pushButton
         right_red = self.ui.right_red_pushButton
 
-        self.ui.right_plot_show_pushButton.clicked.connect(self.view_residue)
+        self.ui.right_plot_show_pushButton.clicked.connect(self.show_selected_residue)
         left_arrow.clicked.connect(self.navigate_residue_left)
         right_arrow.clicked.connect(self.navigate_residue_right)
         left_red.clicked.connect(self.navigate_red_residue_left)
@@ -598,6 +600,11 @@ class StrudelScore(Base):
                 self.draw_left_plot_vline()
         else:
             pass
+
+    def show_selected_residue(self):
+        self.clear_residue_data()
+        if CHIMERA_MODE:
+            self.view_residue()
 
     def navigate_residue_left(self):
         self.navigate_residue('left')
@@ -796,6 +803,7 @@ class StrudelScore(Base):
             y_min = min(y_lst) - 0.05
 
         text_size = self.P.r_lbl_size
+        # y_lbls = [i for i in y_lst if y_min < i < y_range[1]]
         y_lbls, text_size = find_y_label_coordinates(y_lst, [y_min, y_max], height, text_size, spacing=1)
         text_w = text_size / width * 4
 
@@ -886,7 +894,7 @@ class StrudelScore(Base):
         self.run_x(f'transparency #{res_map.id_string} 70 s')
         return res_map, res_model
 
-    def display_motif(self, map_path, model_path, matrix, map_color='#B2B2B2', model_color=None):
+    def display_motif(self, map_path, model_path, matrix, map_color='#B2B2B2', model_color='#B2B2B2'):
 
         r_nr = int(self.active_residue)
         c = self.active_chain
@@ -894,6 +902,7 @@ class StrudelScore(Base):
         map_obj = self.open_model(map_path)
         self.run_x(f'volume #{map_obj.id_string} sdLevel {SD_LEVEL} color {map_color}')
         model_obj = self.open_model(model_path)
+        self.run_x(f'color #{model_obj.id_string} {model_color}')
         # self.run_x(f'color #{model_obj.id_string} {map_color}')
         if matrix:
             self.run_x(f'view matrix mod #{model_obj.id_string},{matrix}')
@@ -908,7 +917,6 @@ class StrudelScore(Base):
             self.run_x(f'fitmap #{map_obj.id_string} inMap #{self.active_res_map_obj.id_string} metric correlation')
             self.run_x(f'view position #{model_obj.id_string} sameAsModels #{map_obj.id_string}')
         self.run_x(f'transparency #{map_obj.id_string} 70 s')
-        self.run_x(f'hide #{model_obj.id_string} models')
         return map_obj, model_obj
 
     def create_left_axis_y_label(self):
@@ -1102,7 +1110,6 @@ class StrudelScore(Base):
         return out_map_path, out_res_path
 
     def chop_residue_environ_sensitive(self, res):
-
         res_type = res.get_resname().lower()
         chain_id = res.parent.id
         res_nr = res.id[1]
@@ -1153,13 +1160,15 @@ class StrudelScore(Base):
         if top_motif_name == "ala_rotamer_1":
             top_motif_name = 'ala_rotamer_single-conf'
 
-        # superimpose
-        r_nr = int(self.active_residue)
-        c = self.active_chain
+
         self.run_x('close #3-100')
         self.run_x('show #1,2 models')
         self.run_x(f'color #1 #00FFFF')
 
+        r_nr = int(self.active_residue)
+        c = self.active_chain
+
+        # delete the previous residue label and create a new one
         if self.sel_res_atomspec is not None:
             self.run_x(f'~label #{self.sel_res_atomspec}')
         self.sel_res_atomspec = f'{self.model_chim.id_string}/{c}:{r_nr}'
@@ -1210,12 +1219,12 @@ class StrudelScore(Base):
         self.update_motifs_view()
 
     def update_motifs_view(self):
+        if self.df is None:
+            return
         same_ma = self.ui.same_map_checkBox.isChecked()
         same_mo = self.ui.same_model_checkBox.isChecked()
         top_ma = self.ui.top_map_checkBox.isChecked()
         top_mo = self.ui.top_model_checkBox.isChecked()
-        # other_ma = True
-        # other_mo = False
 
         for motif in self.open_motifs:
             if motif.mtp == 'same':
@@ -1239,18 +1248,11 @@ class StrudelScore(Base):
                 else:
                     self.run_x(f'hide #{motif.model_id} models')
             if motif.mtp == 'other':
+                self.run_x(f'hide #{motif.model_id} models')
                 if not motif.show:
                     self.run_x(f'hide #{motif.map_id} models')
                 else:
                     self.run_x(f'show #{motif.map_id} models')
-                # if other_ma:
-                #     self.run_x(f'show #{motif.map_id} models')
-                # else:
-                #     self.run_x(f'hide #{motif.map_id} models')
-                # if other_mo:
-                #     self.run_x(f'show #{motif.model_id} models')
-                # else:
-                #     self.run_x(f'hide #{motif.model_id} models')
         self.draw_right_plot()
 
     def set_labels_style(self):
@@ -1306,7 +1308,7 @@ class Parameters:
         self.elem_spacing = 20
         self.selector_frame_size = 60
         self.main_window_width = 1100
-        self.main_window_height = 800
+        self.main_window_height = 1000
         self.left_plot_min_h = 100
 
         self.left_plots_H = 300# - self.elem_spacing *10
@@ -1339,17 +1341,15 @@ class Parameters:
         self.cc_text_size = 11
         self.grey_text = 'color: rgb(106, 109, 112);'
         self.left_plot_axis_font = 'font-family: Helvetica; font-size: 14px; font-weight: bold;'
-        # self.titles_style = 'color: rgb(0, 102, 204);'
-        self.titles_style = 'color: rgb(34, 93, 153);'
         self.label_titles_style = '{color: rgb(34, 93, 153); font-size: 12px;}'
         self.horisontal_line_color = 'color: rgb(139,139,139);'
         # models display
         self.same_map_color = '#26FF53'
-        self.same_model_color = None
+        self.same_model_color = '#26FF53'
         self.top_map_color = '#FF3837'
-        self.top_model_color = None
+        self.top_model_color = '#FF3837'
         self.other_map_color = '#B2B2B2'
-        self.other_model_color = None
+        self.other_model_color = '#B2B2B2'
 
 
 if __name__ == '__main__':

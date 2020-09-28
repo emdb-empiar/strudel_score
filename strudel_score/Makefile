@@ -14,8 +14,7 @@ OS = $(patsubst CYGWIN_NT%,CYGWIN_NT,$(shell uname -s))
 # We use ?= to let CHIMERAX_APP environment variable override
 ifeq ($(OS),Darwin)
 # Mac
-CHIMERAX_APP ?= /Applications/ChimeraX-1.0.app
-# CHIMERAX_APP ?= /Applications/ChimeraX_Daily.app
+CHIMERAX_APP ?= /Applications/ChimeraX-1.1.app
 endif
 ifeq ($(OS),CYGWIN_NT)
 # Windows
