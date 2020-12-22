@@ -14,7 +14,7 @@ OS = $(patsubst CYGWIN_NT%,CYGWIN_NT,$(shell uname -s))
 # We use ?= to let CHIMERAX_APP environment variable override
 ifeq ($(OS),Darwin)
 # Mac
-CHIMERAX_APP ?= /Applications/ChimeraX-1.1.app
+CHIMERAX_APP ?= /Applications/ChimeraX-1.1.1.app
 endif
 ifeq ($(OS),CYGWIN_NT)
 # Windows
@@ -36,7 +36,7 @@ CHIMERAX_EXE = $(shell which chimerax)
 CHIMERAX_BIN=$(dir $(CHIMERAX_EXE))
 PY_EXE = $(CHIMERAX_BIN)python3.7
 TMP = $(subst bin/,, $(CHIMERAX_BIN))
-PIP_EXE = $(TMP)lib/python3.7/site-packages/pip
+PIP_EXE = $(TMP)lib/python3.7/site-packages/pipls
 
 endif
 RUN = $(CHIMERAX_EXE) --nogui --exit --cmd

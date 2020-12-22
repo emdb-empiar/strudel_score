@@ -3,7 +3,7 @@ SET CHIMERAX_EXE="%CHIMERA_PATH%\bin\ChimeraX-console.exe"
 SET PY_EXE="%CHIMERA_PATH%\bin\python.exe"
 SET PYP_EXE="%CHIMERA_PATH%\bin\Scripts\pip3.exe"
 SET SITE="%CHIMERA_PATH%\bin\lib\site-packages"
-
+SET SITE="C:\Users\andrei\AppData\Local\UCSF\ChimeraX\1.1\site-packages"
 for %%A in (%*) DO (
 IF "%%A" == "clean" (
 	%CHIMERAX_EXE% --nogui --cmd "devel clean .; exit"

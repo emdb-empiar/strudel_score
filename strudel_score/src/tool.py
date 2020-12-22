@@ -131,13 +131,14 @@ class StrudelScore(Base):
             os.makedirs(self.tmp)
 
         self.csv_paths = {}
-
+        self.executing = False
         self.df = None
         self.all_chains = ['No chains found']
         self.all_libs = ['No data loaded']
         self.y_axis_ranges = ['Auto', '0 to 1', '0.3 to 1', '0.5 to 1', '0.6 to 1', '0.7 to 1', '0.8 to 1']
         self.right_y_axis_ranges = ['Auto', '0.5 to 1', '0.6 to 1', '0.7 to 1', '0.8 to 1', '0.9 to 1']
         self.res_per_row = ['100', '90', '80', '70', '60', '50']
+        self.metrics = ['Correlation', 'Z-score']
         self.per_chain_mean_cc = None
         self.active_chain = None
         self.active_residue = None
@@ -326,15 +327,18 @@ class StrudelScore(Base):
         if CHIMERA_MODE:
             self.run_x('close all')
             # self.map_chim = self.run_x(f'open {self.map_path}')
-            self.map_chim = self.open_model(self.map_path)
-            self.run_x(f'volume #{self.map_chim.id_string} sdLevel {SD_LEVEL + 2} style mesh step 1')
+            # self.run_x(f'volume #{self.map_chim.id_string} sdLevel {SD_LEVEL + 2} style mesh step 1')
             # self.model_chim = self.run_x(f'open {self.model_path}')
             self.model_chim = self.open_model(self.model_path)
-
-            self.run_x('style stick')
+            self.map_chim = self.open_model(self.map_path)
+            self.run_x('clipper assoc #2 to #1')
             self.run_x('size stickRadius 0.03')
-            self.run_x('~ribbon')
-            self.run_x('show atoms')
+            from chimerax.std_commands import cofr, camera
+            cofr.cofr(self.local_session, 'centerOfView', show_pivot=False)
+            # self.run_x('style stick')
+            # self.run_x('size stickRadius 0.03')
+            # self.run_x('~ribbon')
+            # self.run_x('show atoms')
         self.model_obj = bu.load_structure(self.model_path)
         self.map_obj = MapParser(self.map_path)
 
@@ -481,6 +485,13 @@ class StrudelScore(Base):
         if self.df is not None:
             combo_box.currentIndexChanged.connect(self.update_left_plots)
 
+        combo_box = self.ui.metric_comboBox
+        if combo_box.currentText() not in self.metrics:
+            combo_box.addItems(self.metrics)
+        combo_box.setCurrentText(self.P.default_metrics)
+        if self.df is not None:
+            combo_box.currentIndexChanged.connect(self.update_left_plots)
+
     def do_nothing(self):
         pass
 
@@ -508,7 +519,7 @@ class StrudelScore(Base):
         self.active_res_map_obj = None
         self.active_res_model_obj = None
         if CHIMERA_MODE:
-            self.run_x('close #3-100')
+            self.run_x('close #2-100')
 
     def create_left_plots_container(self):
         ui = self.ui
@@ -551,7 +562,7 @@ class StrudelScore(Base):
         right_arrow.clicked.connect(self.navigate_residue_right)
         left_red.clicked.connect(self.navigate_red_residue_left)
         right_red.clicked.connect(self.navigate_red_residue_right)
-
+        self.right_arrow = right_arrow
         vlayout = self.ui.right_plot_frame_verticalLayout
         vlayout.insertWidget(1, self.right_plot_canvas)
         vlayout.setContentsMargins(0, 0, 0, 0)
@@ -630,11 +641,13 @@ class StrudelScore(Base):
         y_range = self.left_axis_selector.currentText()
         self.current_chain_data = self.get_chain_data(self.df, self.active_chain)
         res = int(self.ui.res_per_row_comboBox.currentText())
+        metric = self.ui.metric_comboBox.currentText()
         all_left = self.draw_left_plots(self.current_chain_data,
                                         max_res=res,
                                         red_diff=self.P.red_difference,
                                         blue_threshold=self.P.blue_threshold,
-                                        y_range=y_range)
+                                        y_range=y_range,
+                                        metric=metric)
         # Clear left plots
         for i in reversed(range(self.left_plots_vbox.count())):
             self.left_plots_vbox.itemAt(i).widget().setParent(None)
@@ -643,7 +656,7 @@ class StrudelScore(Base):
             plot.setMinimumHeight(self.P.left_plot_min_h)
             self.left_plots_vbox.addWidget(plot)
 
-    def draw_left_plots(self, data, max_res=60, red_diff=0.05, blue_threshold=0.7, y_range='Auto'):
+    def draw_left_plots(self, data, max_res=60, red_diff=0.05, blue_threshold=0.7, y_range='Auto', metric='Correlation'):
         all_plots = []
         nr_list = data[self.k.RES_NR].tolist()
         corr_cc_list = data[self.k.SAME_TYPE_CC].tolist()
@@ -684,7 +697,10 @@ class StrudelScore(Base):
             fig = Figure()
             ax = fig.add_subplot(111)
             ax.set_xlim(x_start - 0.5, x_end)
-            ax.set_ylim(ax_lim)
+            if metric == 'Correlation':
+                ax.set_ylim(ax_lim)
+            else:
+                ax.set_ylim([-3, 3])
             ax.spines['right'].set_color('none')
             ax.spines['top'].set_color('none')
             ax.yaxis.set_label_position("right")
@@ -695,16 +711,54 @@ class StrudelScore(Base):
 
             green_row_data = data[(x_start <= data[self.k.RES_NR]) & (data[self.k.RES_NR] < x_end)]
             green_x = green_row_data[self.k.RES_NR].tolist()
-            green_y = green_row_data[self.k.SAME_TYPE_CC].tolist()
             self.ax_residues.append([ax, fig, green_x])
 
-            red_row_data = green_row_data[green_row_data[self.k.TOP_SAME_TYPE_DIFF] > red_diff]
-            red_x = red_row_data[self.k.RES_NR].tolist()
-            red_y = red_row_data[self.k.TOP_CC].tolist()
+            if metric == 'Correlation':
+                green_y = green_row_data[self.k.SAME_TYPE_CC].tolist()
+                red_row_data = green_row_data[green_row_data[self.k.TOP_SAME_TYPE_DIFF] > red_diff]
+                red_x = red_row_data[self.k.RES_NR].tolist()
+                red_y = red_row_data[self.k.TOP_CC].tolist()
 
-            blue_row_data = green_row_data[green_row_data[self.k.SAME_TYPE_CC] < blue_threshold]
-            blue_x = blue_row_data[self.k.RES_NR].tolist()
-            blue_y = blue_row_data[self.k.SAME_TYPE_CC].tolist()
+                blue_row_data = green_row_data[green_row_data[self.k.SAME_TYPE_CC] < blue_threshold]
+                blue_x = blue_row_data[self.k.RES_NR].tolist()
+                blue_y = blue_row_data[self.k.SAME_TYPE_CC].tolist()
+                top_key = self.k.TOP_CC
+                same_key = self.k.SAME_TYPE_CC
+
+            elif metric == 'Z-score':
+                green_y = green_row_data[self.k.SAME_TYPE_Z].tolist()
+                red_row_data = green_row_data[green_row_data[self.k.TOP_SAME_TYPE_DIFF_Z] > red_diff]
+                red_x = red_row_data[self.k.RES_NR].tolist()
+                red_y = red_row_data[self.k.TOP_Z].tolist()
+
+                blue_row_data = green_row_data[green_row_data[self.k.SAME_TYPE_CC] < blue_threshold]
+                blue_x = blue_row_data[self.k.RES_NR].tolist()
+                blue_y = blue_row_data[self.k.SAME_TYPE_Z].tolist()
+                top_key = self.k.TOP_Z
+                same_key = self.k.SAME_TYPE_Z
+            else:
+                top_key = self.k.TOP_CC
+                same_key = self.k.SAME_TYPE_CC
+                green_y = []
+                red_y = []
+                red_x = []
+                blue_x = []
+                blue_y = []
+                red_row_data = []
+                blue_row_data = []
+
+            # z_green_y = []
+
+            # if metric == 'Z-score':
+            #     for index, row in green_row_data.iterrows():
+            #         all_corr = []
+            #         for name, value in row.iteritems():
+            #             if name.endswith(self.k.TYPE_TOP_CC):
+            #                 all_corr.append(value)
+            #         all_corr = np.array(all_corr)
+            #         aver = all_corr.sum() / len(all_corr)
+            #         z = (row[self.k.SAME_TYPE_CC] - aver) / all_corr.std()
+            #         z_green_y.append(z)
 
             ax.plot(green_x, green_y, 'o', c=self.P.l_same_type_color,
                     markersize=self.P.l_marker_size,
@@ -721,17 +775,18 @@ class StrudelScore(Base):
                     ax.plot(rl_x, [ax_lim[0]+0.05 for i in range(len(rl_x))], '*', c='b')
             except KeyError:
                 pass
+            # if metric == 'Correlation':
 
             for index, row in red_row_data.iterrows():
-                ax.text(row[self.k.RES_NR], row[self.k.TOP_CC], row[self.k.M_TOP_TYPE].upper(),
+                ax.text(row[self.k.RES_NR], row[top_key], row[self.k.M_TOP_TYPE].upper(),
                         color=self.P.l_top_type_color,
                         size=txt_size, horizontalalignment='left', verticalalignment='bottom', rotation=50)
 
-                ax.text(row[self.k.RES_NR], row[self.k.SAME_TYPE_CC], row[self.k.RES_TYPE].upper(),
+                ax.text(row[self.k.RES_NR], row[same_key], row[self.k.RES_TYPE].upper(),
                         color=self.P.l_lbl_same_type_color,
                         size=txt_size, horizontalalignment='right', verticalalignment='top', rotation=50)
             for index, row in blue_row_data.iterrows():
-                ax.text(row[self.k.RES_NR], row[self.k.SAME_TYPE_CC], row[self.k.RES_TYPE].upper(),
+                ax.text(row[self.k.RES_NR], row[same_key], row[self.k.RES_TYPE].upper(),
                         color=self.P.l_lbl_same_type_lowcorr_color,
                         size=txt_size, horizontalalignment='right', verticalalignment='top', rotation=50)
 
@@ -770,6 +825,7 @@ class StrudelScore(Base):
         self.draw_left_plot_vline()
 
     def draw_right_plot(self, max_res_display=20, y_max=1):
+        metric = self.ui.metric_comboBox.currentText()
         width = self.right_plot_canvas.width()
         height = self.right_plot_canvas.height()
         self.right_ax.clear()
@@ -778,10 +834,16 @@ class StrudelScore(Base):
         r = self.current_chain_data[self.current_chain_data[self.k.RES_NR] == r_nr]
         self.active_residue_data = r
         same_type = r[self.k.RES_TYPE].tolist()[0].upper()
+
+        if metric == 'Correlation':
+            key = self.k.TYPE_TOP_CC
+        else:
+            key = self.k.TYPE_TOP_Z
         y_data = []
         for name, value in r.iteritems():
-            if name.endswith(self.k.TYPE_TOP_CC):
+            if name.endswith(key):
                 y_data.append((value.tolist()[0], name.split('_')[0].upper()))
+
 
         y_data.sort(key=lambda v: v[0], reverse=True)
         y_data = y_data[:max_res_display]
@@ -803,6 +865,16 @@ class StrudelScore(Base):
             y_min = min(y_lst) - 0.05
 
         text_size = self.P.r_lbl_size
+        # print(metric)
+        if metric == 'Z-score':
+            y_min = -3
+            y_max = 3
+        #     tmp = np.array(y_lst)
+        #     mean = tmp.sum() / len(tmp)
+        #     std = tmp.std()
+        #     y_lst = [(v - mean) / std for v in tmp]
+        #     y_min = -2
+        #     y_max = 2
         # y_lbls = [i for i in y_lst if y_min < i < y_range[1]]
         y_lbls, text_size = find_y_label_coordinates(y_lst, [y_min, y_max], height, text_size, spacing=1)
         text_w = text_size / width * 4
@@ -969,6 +1041,7 @@ class StrudelScore(Base):
             except (KeyError, AttributeError) as e:
                 csv_path = self.csv_paths[sorted(self.csv_paths.keys())[0]]
             self.df = self.read_data(csv_path)
+            self.calculate_z_scores()
             self.all_chains = self.get_chain_list(self.df)
             self.active_chain = self.all_chains[0]
             self.current_chain_data = self.get_chain_data(self.df, self.active_chain)
@@ -983,6 +1056,39 @@ class StrudelScore(Base):
         df[self.k.CHAIN] = df[self.k.CHAIN].apply(str)
         return df
 
+    def calculate_z_scores(self):
+
+        df = self.df
+        nr_rows = df.shape[0]
+        zeros = [0.0 for _ in range(nr_rows)]
+        df[self.k.SAME_TYPE_Z] = zeros
+        df[self.k.TYPE_TOP_Z] = zeros
+        df[self.k.TOP_Z] = zeros
+        df[self.k.STD] = zeros
+
+        for index, row in df.iterrows():
+            # print('Index', index)
+            all_corr = []
+            for name, value in row.iteritems():
+                if name.endswith(self.k.TYPE_TOP_CC):
+                    all_corr.append(value)
+            # print(all_corr)
+            all_corr = np.array(all_corr)
+
+            std = all_corr.std()
+            aver = all_corr.sum() / len(all_corr)
+            df.at[index, self.k.MEAN] = aver
+            df.at[index, self.k.STD] = std
+            # print('std', std)
+            # print('aver', aver)
+            for name, value in row.iteritems():
+                if name.endswith('_rscc'):
+                    df.at[index, name[:-4]+'z'] = (value - aver) / std
+                    # print(name, value)
+                    # print(index, name[:-4]+'z', (value - aver) / std)
+            # break
+        df[self.k.TOP_SAME_TYPE_DIFF_Z] = (df[self.k.TOP_Z] - df[self.k.SAME_TYPE_Z]) / df[self.k.TOP_Z] * df[self.k.STD]
+        df.to_csv('/Volumes/data/test.csv')
     def get_chain_list(self, df):
         chains = df[self.k.CHAIN].unique()
         # chains = sorted(chains)
@@ -1129,6 +1235,12 @@ class StrudelScore(Base):
             fin_map.write_map(out_map_path)
         return out_map_path, out_res_path
 
+
+    @staticmethod
+    def first(trigger, trigger_data):
+        print('trigger =', trigger)
+        print('  trigger_data =', trigger_data)
+
     def view_residue(self):
         if not CHIMERA_MODE:
             self.no_chimera_message()
@@ -1136,6 +1248,39 @@ class StrudelScore(Base):
 
         if self.active_residue_data is None:
             return
+
+        r_nr = int(self.active_residue)
+        c = self.active_chain
+        # self.run_x(f'clipper isolate #{self.model_chim.id_string}/{c}:{r_nr}@ca focus true')
+        # self.run_x('clipper spotlight')
+        rr = None
+        for ch in self.model_chim.chains:
+            if ch.chain_id == c.upper():
+                for r in ch.residues:
+                    if r is None:
+                        continue
+                    if r.number == r_nr:
+                        rr = r
+
+        # self._new_camera_position(rr)
+        from chimerax.isolde.navigate import get_stepper
+        get_stepper(self.model_chim).step_to(rr)
+        # self.run_x('wait 100')
+        # self.local_session.triggers.activate_trigger('model position changed', self.model_chim)
+        # import time
+        # from chimerax.core import triggerset
+        # ts = triggerset.TriggerSet()
+        # ts.add_trigger('conrad')
+        # h1 = ts.add_handler('conrad', self.first)
+        # ts.activate_trigger('conrad', 1)
+        self.model_chim.session.models[0].update()
+        # delete the previous residue label and create a new one
+        if self.sel_res_atomspec is not None:
+            self.run_x(f'~label #{self.sel_res_atomspec}')
+        self.sel_res_atomspec = f'{self.model_chim.id_string}/{c}:{r_nr}'
+        self.run_x(f'label #{self.sel_res_atomspec} height 0.4')
+        self.run_x('wait')
+        # time.sleep(3)
 
         if self.active_lib_path is None:
             text = f"Sorry no motif library found for {self.lib_selector.currentText()} resolution range\n" \
@@ -1162,17 +1307,9 @@ class StrudelScore(Base):
 
 
         self.run_x('close #3-100')
-        self.run_x('show #1,2 models')
-        self.run_x(f'color #1 #00FFFF')
+        # self.run_x('show #1,2 models')
+        # self.run_x(f'color #1 #00FFFF')
 
-        r_nr = int(self.active_residue)
-        c = self.active_chain
-
-        # delete the previous residue label and create a new one
-        if self.sel_res_atomspec is not None:
-            self.run_x(f'~label #{self.sel_res_atomspec}')
-        self.sel_res_atomspec = f'{self.model_chim.id_string}/{c}:{r_nr}'
-        self.run_x(f'label #{self.sel_res_atomspec} height 0.4')
 
         if self.active_lib_path is not None:
             try:
@@ -1183,7 +1320,10 @@ class StrudelScore(Base):
             else:
                 if os.path.exists(lib_same_map_path) and os.path.exists(lib_same_model_path):
                     same_map, same_model = self.display_motif(lib_same_map_path, lib_same_model_path, same_type_matrix,
-                                                              map_color=self.P.same_map_color, model_color=self.P.same_model_color)
+                                                              map_color=self.P.same_map_color,
+                                                              model_color=self.P.same_model_color)
+                    same_map.display = False
+                    same_model.display = False
                     self.open_motifs.append(self.Motif(type=same_type, map_id=same_map.id_string, model_id=same_model.id_string,
                                                        show=False, mtp='same'))
                 else:
@@ -1203,6 +1343,8 @@ class StrudelScore(Base):
                                                                 top_motif_matrix,
                                                                 map_color=self.P.top_map_color,
                                                                 model_color=self.P.top_model_color)
+                        top_map.display = False
+                        top_model.display = False
                         self.open_motifs.append(self.Motif(type=top_type, map_id=top_map.id_string, model_id=top_model.id_string,
                                                            show=False, mtp='top'))
 
@@ -1211,12 +1353,14 @@ class StrudelScore(Base):
                                f'{top_motif_name + ".mrc"},  {top_motif_name + ".cif"}'
                         self.show_mesage('Motif library missing', text)
 
-        self.run_x(f'view #{self.model_chim.id_string}/{c}:{r_nr}@ca pad 0.7')
-        self.run_x('size stickRadius 0.03')
-        self.run_x(f'zone #{self.model_chim.id_string}/{c}:{r_nr}@ca surfaceDistance 8 label false')
-        self.run_x('clip near -6')
-        self.run_x('clip far 6')
-        self.update_motifs_view()
+        # self.run_x(f'view #{self.model_chim.id_string}/{c}:{r_nr}@ca pad 0.7')
+
+        # self.run_x('size stickRadius 0.03')
+        # self.run_x(f'zone #{self.model_chim.id_string}/{c}:{r_nr}@ca surfaceDistance 8 label false')
+        # self.run_x('clip near -6')
+        # self.run_x('clip far 6')
+
+        # self.update_motifs_view()
 
     def update_motifs_view(self):
         if self.df is None:
@@ -1269,6 +1413,180 @@ class StrudelScore(Base):
                       ui.in_row_label]:
             label.setStyleSheet(f"QLabel {self.P.label_titles_style}")
 
+    def _block_clipper_spotlights(self):
+        from chimerax.clipper import get_all_symmetry_handlers
+        sym_handlers = get_all_symmetry_handlers(self.session)
+        for sh in sym_handlers:
+            sh.triggers._triggers['spotlight moved'].block()
+
+    def _release_clipper_spotlights(self):
+        from chimerax.clipper import get_all_symmetry_handlers
+        sym_handlers = get_all_symmetry_handlers(self.session)
+        for sh in sym_handlers:
+            sh.triggers._triggers['spotlight moved'].release()
+            if sh.spotlight_mode:
+                sh.update()
+
+    def _new_camera_position(self, residue, block_spotlight=False):
+        session = self.session
+        r = residue
+        from chimerax.atomic import Residue, Atoms
+        pt = residue.polymer_type
+        if pt == Residue.PT_NONE:
+            # No preferred orientation
+            ref_coords = None
+            target_coords = r.atoms.coords
+            centroid = target_coords.mean(axis=0)
+        elif pt == Residue.PT_AMINO:
+            ref_coords = self.peptide_ref_coords
+            try:
+                target_coords = Atoms([r.find_atom(name) for name in ('N', 'CA', 'C')]).coords
+                centroid = target_coords[1]
+            except ValueError:
+                # Either a key atom is missing, or this is a special residue
+                # e.g. NH2
+                ref_coords=None
+                target_coords = r.atoms.coords
+                centroid = target_coords.mean(axis=0)
+        elif pt == Residue.PT_NUCLEIC:
+            ref_coords = self.nucleic_ref_coords
+            try:
+                target_coords = Atoms(
+                    [r.find_atom(name) for name in ("C2'", "C1'", "O4'")]
+                ).coords
+                centroid=target_coords[1]
+            except ValueError:
+                ref_coords=None
+                target_coords = r.atoms.coords
+                centroid = target_coords.mean(axis=0)
+
+        c = session.main_view.camera
+        cp = c.position
+        old_cofr = session.main_view.center_of_rotation
+
+
+
+        if ref_coords is not None:
+            from chimerax.geometry import align_points, Place
+            p, rms = align_points(ref_coords, target_coords)
+        else:
+            from chimerax.geometry import Place
+            p = Place(origin=centroid)
+
+        tc = self._camera_ref_pos(10)
+        np = p*tc
+        new_cofr = centroid
+        fw = c.field_width
+        new_fw = 10*2
+
+        def interpolate_camera(session, f, cp=cp, np=np, oc=old_cofr, nc=new_cofr, fw=fw, nfw=new_fw, vr=10, center=np.inverse()*centroid, frames=15):
+            frac = (f+1)/frames
+            v = session.main_view
+            c = v.camera
+            p = np if f+1==frames else cp.interpolate(np, center, frac=frac)
+            cofr = oc+frac*(nc-oc)
+            c.position = p
+            vd = c.view_direction()
+            cp = v.clip_planes
+            ncm, fcm = (0.5, 0.5)
+            cp.set_clip_position('near', cofr-ncm*vr*vd, v)
+            cp.set_clip_position('far', cofr+fcm*vr*vd, v)
+            if c.name=='orthographic':
+                c.field_width = fw+frac*(nfw-fw)
+
+        from chimerax.geometry import distance
+        if distance(new_cofr, old_cofr) < 10:
+            if block_spotlight:
+                self._block_clipper_spotlights()
+                # from .delayed_reaction import call_after_n_events
+                self.call_after_n_events(self.session.triggers, 'frame drawn', 15, self._release_clipper_spotlights, [])
+            from chimerax.core.commands import motion
+            motion.CallForNFrames(interpolate_camera, 15, session)
+        else:
+            self.run_x('wait')
+            self._block_clipper_spotlights()
+            # from .delayed_reaction import call_after_n_events
+            self.call_after_n_events(self.session.triggers, 'frame drawn', 5, self._release_clipper_spotlights, [])
+            # interpolate_camera(session, 0, frames=1)
+            from chimerax.core.commands import motion
+            motion.CallForNFrames(interpolate_camera, 5, session)
+
+    @staticmethod
+    def call_after_n_events(triggerset, trigger_name, n, callback, callback_args):
+        class _cb:
+            def __init__(self, triggerset, trigger_name, n, cb, cb_args):
+                self.count = 0
+                self.max_count = n
+                self.cb = cb
+                self.cb_args = cb_args
+                triggerset.add_handler(trigger_name, self.callback)
+
+            def callback(self, *_):
+                c = self.count = self.count + 1
+                if c >= self.max_count:
+                    self.cb(*self.cb_args)
+                    from chimerax.core.triggerset import DEREGISTER
+                    return DEREGISTER
+
+        _cb(triggerset, trigger_name, n, callback, callback_args)
+
+    @property
+    def peptide_ref_coords(self):
+        '''
+        Reference N, CA, C coords for a peptide backbone, used for setting camera
+        position and orientation.
+        '''
+        if not hasattr(self, '_peptide_ref_coords'):
+            import numpy
+            self._peptide_ref_coords = numpy.array([
+                [-0.844, 0.063, -0.438],
+                [0.326, 0.668, 0.249],
+                [1.680, 0.523, -0.433]
+            ])
+        return self._peptide_ref_coords
+
+    @property
+    def nucleic_ref_coords(self):
+        '''
+        Reference C2', C1', O4' coords for a nucleic acid residue, used for setting
+        camera position and orientation.
+        '''
+        if not hasattr(self, '_nucleic_ref_coords'):
+            import numpy
+            self._nucleic_ref_coords = numpy.array([
+                [0.822, -0.112, 1.280],
+                [0,0,0],
+                [0.624, -0.795, -0.985]
+            ])
+        return self._nucleic_ref_coords
+
+    def _camera_ref_pos(self, distance):
+        from chimerax.geometry import Place
+        return Place(axes=[[1,0,0], [0,0,1],[0,-1,0]], origin=[0,-distance,0])
+
+# class Second:
+#
+#     def __init__(self, ts):
+#         self.triggerset = ts
+#         self.handler = None
+#
+#     def trigger_handler(self, trigger, trigger_data):
+#         print('trigger =', trigger)
+#         print('  triggerset =', self.triggerset)
+#         print('  handler =', self.handler)
+#         print('  trigger_data =', trigger_data)
+#         if self.triggerset and self.handler:
+#             self.triggerset.remove_handler(self.handler)
+#             self.handler = None
+#
+# h1 = ts.add_handler('conrad', first)
+# o = Second(ts)
+# o.handler = ts.add_handler('conrad', o.trigger_handler)
+#
+# ts.activate_trigger('conrad', 1)
+# print()
+# ts.activate_trigger('conrad', 2)
+
 
 class DictKeys:
     RES_TYPE = 'residue_type'
@@ -1280,18 +1598,25 @@ class DictKeys:
     M_TOP_NAME = 'top_motif_name'
     M_TOP_MATRIX = 'top_motif_matrix'
     TOP_CC = 'top_rscc'
+    TOP_Z = 'top_z'
     SAME_TYPE_NAME = 'same_type_motif_name'
     SAME_TYPE_CC = 'same_type_motif_rscc'
+    SAME_TYPE_Z = 'same_type_motif_z'
     SAME_TYPE_MATRIX = 'same_type_motif_matrix'
     # FULL NAME EXAMPLE "ala_cc" suffix for top correlation of specific residue type library motifs
     TYPE_TOP_CC = '_top_motif_rscc'
+    TYPE_TOP_Z = '_top_motif_z'
+
     # FULL NAME EXAMPLE "ala_motif_name"
     TYPE_TOP_NAME = '_top_motif_name'
     TYPE_TOP_MATRIX = '_top_motif_matrix'
     SCORES = 'scores'
     ALL_TOP_MOTIFS = 'all_top_motifs'
     TOP_SAME_TYPE_DIFF = 'top_same_dif'
+    TOP_SAME_TYPE_DIFF_Z = 'top_same_dif_z'
     COMPLETE_DATA = 'complete_data'
+    MEAN = 'mean'
+    STD = 'std'
 
 
 class Parameters:
@@ -1303,6 +1628,7 @@ class Parameters:
         self.default_res_per_row = '60'
         # If claimed residue type RSCC is lower than it is coloured blue
         self.blue_threshold = 0.7
+        self.default_metrics = 'Correlation'
 
         self.line_height = 28
         self.elem_spacing = 20
