@@ -35,10 +35,10 @@ from matplotlib.ticker import FormatStrFormatter
 import pandas as pd
 import numpy as np
 
-from strudel.utils import bioUtils as bu
-from strudel.chop.chopMap import ChopMap
-from strudel.parse.mapParser import MapParser
-from strudel import nomenclature
+from threed_strudel.utils import bioUtils as bu
+from threed_strudel.chop.chopMap import ChopMap
+from threed_strudel.parse.mapParser import MapParser
+from threed_strudel import nomenclature
 try:
     from .functions import find_y_label_coordinates
 except ModuleNotFoundError:
@@ -1413,156 +1413,156 @@ class StrudelScore(Base):
                       ui.in_row_label]:
             label.setStyleSheet(f"QLabel {self.P.label_titles_style}")
 
-    def _block_clipper_spotlights(self):
-        from chimerax.clipper import get_all_symmetry_handlers
-        sym_handlers = get_all_symmetry_handlers(self.session)
-        for sh in sym_handlers:
-            sh.triggers._triggers['spotlight moved'].block()
+    # def _block_clipper_spotlights(self):
+    #     from chimerax.clipper import get_all_symmetry_handlers
+    #     sym_handlers = get_all_symmetry_handlers(self.session)
+    #     for sh in sym_handlers:
+    #         sh.triggers._triggers['spotlight moved'].block()
+    #
+    # def _release_clipper_spotlights(self):
+    #     from chimerax.clipper import get_all_symmetry_handlers
+    #     sym_handlers = get_all_symmetry_handlers(self.session)
+    #     for sh in sym_handlers:
+    #         sh.triggers._triggers['spotlight moved'].release()
+    #         if sh.spotlight_mode:
+    #             sh.update()
 
-    def _release_clipper_spotlights(self):
-        from chimerax.clipper import get_all_symmetry_handlers
-        sym_handlers = get_all_symmetry_handlers(self.session)
-        for sh in sym_handlers:
-            sh.triggers._triggers['spotlight moved'].release()
-            if sh.spotlight_mode:
-                sh.update()
-
-    def _new_camera_position(self, residue, block_spotlight=False):
-        session = self.session
-        r = residue
-        from chimerax.atomic import Residue, Atoms
-        pt = residue.polymer_type
-        if pt == Residue.PT_NONE:
-            # No preferred orientation
-            ref_coords = None
-            target_coords = r.atoms.coords
-            centroid = target_coords.mean(axis=0)
-        elif pt == Residue.PT_AMINO:
-            ref_coords = self.peptide_ref_coords
-            try:
-                target_coords = Atoms([r.find_atom(name) for name in ('N', 'CA', 'C')]).coords
-                centroid = target_coords[1]
-            except ValueError:
-                # Either a key atom is missing, or this is a special residue
-                # e.g. NH2
-                ref_coords=None
-                target_coords = r.atoms.coords
-                centroid = target_coords.mean(axis=0)
-        elif pt == Residue.PT_NUCLEIC:
-            ref_coords = self.nucleic_ref_coords
-            try:
-                target_coords = Atoms(
-                    [r.find_atom(name) for name in ("C2'", "C1'", "O4'")]
-                ).coords
-                centroid=target_coords[1]
-            except ValueError:
-                ref_coords=None
-                target_coords = r.atoms.coords
-                centroid = target_coords.mean(axis=0)
-
-        c = session.main_view.camera
-        cp = c.position
-        old_cofr = session.main_view.center_of_rotation
-
-
-
-        if ref_coords is not None:
-            from chimerax.geometry import align_points, Place
-            p, rms = align_points(ref_coords, target_coords)
-        else:
-            from chimerax.geometry import Place
-            p = Place(origin=centroid)
-
-        tc = self._camera_ref_pos(10)
-        np = p*tc
-        new_cofr = centroid
-        fw = c.field_width
-        new_fw = 10*2
-
-        def interpolate_camera(session, f, cp=cp, np=np, oc=old_cofr, nc=new_cofr, fw=fw, nfw=new_fw, vr=10, center=np.inverse()*centroid, frames=15):
-            frac = (f+1)/frames
-            v = session.main_view
-            c = v.camera
-            p = np if f+1==frames else cp.interpolate(np, center, frac=frac)
-            cofr = oc+frac*(nc-oc)
-            c.position = p
-            vd = c.view_direction()
-            cp = v.clip_planes
-            ncm, fcm = (0.5, 0.5)
-            cp.set_clip_position('near', cofr-ncm*vr*vd, v)
-            cp.set_clip_position('far', cofr+fcm*vr*vd, v)
-            if c.name=='orthographic':
-                c.field_width = fw+frac*(nfw-fw)
-
-        from chimerax.geometry import distance
-        if distance(new_cofr, old_cofr) < 10:
-            if block_spotlight:
-                self._block_clipper_spotlights()
-                # from .delayed_reaction import call_after_n_events
-                self.call_after_n_events(self.session.triggers, 'frame drawn', 15, self._release_clipper_spotlights, [])
-            from chimerax.core.commands import motion
-            motion.CallForNFrames(interpolate_camera, 15, session)
-        else:
-            self.run_x('wait')
-            self._block_clipper_spotlights()
-            # from .delayed_reaction import call_after_n_events
-            self.call_after_n_events(self.session.triggers, 'frame drawn', 5, self._release_clipper_spotlights, [])
-            # interpolate_camera(session, 0, frames=1)
-            from chimerax.core.commands import motion
-            motion.CallForNFrames(interpolate_camera, 5, session)
-
-    @staticmethod
-    def call_after_n_events(triggerset, trigger_name, n, callback, callback_args):
-        class _cb:
-            def __init__(self, triggerset, trigger_name, n, cb, cb_args):
-                self.count = 0
-                self.max_count = n
-                self.cb = cb
-                self.cb_args = cb_args
-                triggerset.add_handler(trigger_name, self.callback)
-
-            def callback(self, *_):
-                c = self.count = self.count + 1
-                if c >= self.max_count:
-                    self.cb(*self.cb_args)
-                    from chimerax.core.triggerset import DEREGISTER
-                    return DEREGISTER
-
-        _cb(triggerset, trigger_name, n, callback, callback_args)
-
-    @property
-    def peptide_ref_coords(self):
-        '''
-        Reference N, CA, C coords for a peptide backbone, used for setting camera
-        position and orientation.
-        '''
-        if not hasattr(self, '_peptide_ref_coords'):
-            import numpy
-            self._peptide_ref_coords = numpy.array([
-                [-0.844, 0.063, -0.438],
-                [0.326, 0.668, 0.249],
-                [1.680, 0.523, -0.433]
-            ])
-        return self._peptide_ref_coords
-
-    @property
-    def nucleic_ref_coords(self):
-        '''
-        Reference C2', C1', O4' coords for a nucleic acid residue, used for setting
-        camera position and orientation.
-        '''
-        if not hasattr(self, '_nucleic_ref_coords'):
-            import numpy
-            self._nucleic_ref_coords = numpy.array([
-                [0.822, -0.112, 1.280],
-                [0,0,0],
-                [0.624, -0.795, -0.985]
-            ])
-        return self._nucleic_ref_coords
-
-    def _camera_ref_pos(self, distance):
-        from chimerax.geometry import Place
-        return Place(axes=[[1,0,0], [0,0,1],[0,-1,0]], origin=[0,-distance,0])
+    # def _new_camera_position(self, residue, block_spotlight=False):
+    #     session = self.session
+    #     r = residue
+    #     from chimerax.atomic import Residue, Atoms
+    #     pt = residue.polymer_type
+    #     if pt == Residue.PT_NONE:
+    #         # No preferred orientation
+    #         ref_coords = None
+    #         target_coords = r.atoms.coords
+    #         centroid = target_coords.mean(axis=0)
+    #     elif pt == Residue.PT_AMINO:
+    #         ref_coords = self.peptide_ref_coords
+    #         try:
+    #             target_coords = Atoms([r.find_atom(name) for name in ('N', 'CA', 'C')]).coords
+    #             centroid = target_coords[1]
+    #         except ValueError:
+    #             # Either a key atom is missing, or this is a special residue
+    #             # e.g. NH2
+    #             ref_coords=None
+    #             target_coords = r.atoms.coords
+    #             centroid = target_coords.mean(axis=0)
+    #     elif pt == Residue.PT_NUCLEIC:
+    #         ref_coords = self.nucleic_ref_coords
+    #         try:
+    #             target_coords = Atoms(
+    #                 [r.find_atom(name) for name in ("C2'", "C1'", "O4'")]
+    #             ).coords
+    #             centroid=target_coords[1]
+    #         except ValueError:
+    #             ref_coords=None
+    #             target_coords = r.atoms.coords
+    #             centroid = target_coords.mean(axis=0)
+    #
+    #     c = session.main_view.camera
+    #     cp = c.position
+    #     old_cofr = session.main_view.center_of_rotation
+    #
+    #
+    #
+    #     if ref_coords is not None:
+    #         from chimerax.geometry import align_points, Place
+    #         p, rms = align_points(ref_coords, target_coords)
+    #     else:
+    #         from chimerax.geometry import Place
+    #         p = Place(origin=centroid)
+    #
+    #     tc = self._camera_ref_pos(10)
+    #     np = p*tc
+    #     new_cofr = centroid
+    #     fw = c.field_width
+    #     new_fw = 10*2
+    #
+    #     def interpolate_camera(session, f, cp=cp, np=np, oc=old_cofr, nc=new_cofr, fw=fw, nfw=new_fw, vr=10, center=np.inverse()*centroid, frames=15):
+    #         frac = (f+1)/frames
+    #         v = session.main_view
+    #         c = v.camera
+    #         p = np if f+1==frames else cp.interpolate(np, center, frac=frac)
+    #         cofr = oc+frac*(nc-oc)
+    #         c.position = p
+    #         vd = c.view_direction()
+    #         cp = v.clip_planes
+    #         ncm, fcm = (0.5, 0.5)
+    #         cp.set_clip_position('near', cofr-ncm*vr*vd, v)
+    #         cp.set_clip_position('far', cofr+fcm*vr*vd, v)
+    #         if c.name=='orthographic':
+    #             c.field_width = fw+frac*(nfw-fw)
+    #
+    #     from chimerax.geometry import distance
+    #     if distance(new_cofr, old_cofr) < 10:
+    #         if block_spotlight:
+    #             self._block_clipper_spotlights()
+    #             # from .delayed_reaction import call_after_n_events
+    #             self.call_after_n_events(self.session.triggers, 'frame drawn', 15, self._release_clipper_spotlights, [])
+    #         from chimerax.core.commands import motion
+    #         motion.CallForNFrames(interpolate_camera, 15, session)
+    #     else:
+    #         self.run_x('wait')
+    #         self._block_clipper_spotlights()
+    #         # from .delayed_reaction import call_after_n_events
+    #         self.call_after_n_events(self.session.triggers, 'frame drawn', 5, self._release_clipper_spotlights, [])
+    #         # interpolate_camera(session, 0, frames=1)
+    #         from chimerax.core.commands import motion
+    #         motion.CallForNFrames(interpolate_camera, 5, session)
+    #
+    # @staticmethod
+    # def call_after_n_events(triggerset, trigger_name, n, callback, callback_args):
+    #     class _cb:
+    #         def __init__(self, triggerset, trigger_name, n, cb, cb_args):
+    #             self.count = 0
+    #             self.max_count = n
+    #             self.cb = cb
+    #             self.cb_args = cb_args
+    #             triggerset.add_handler(trigger_name, self.callback)
+    #
+    #         def callback(self, *_):
+    #             c = self.count = self.count + 1
+    #             if c >= self.max_count:
+    #                 self.cb(*self.cb_args)
+    #                 from chimerax.core.triggerset import DEREGISTER
+    #                 return DEREGISTER
+    #
+    #     _cb(triggerset, trigger_name, n, callback, callback_args)
+    #
+    # @property
+    # def peptide_ref_coords(self):
+    #     '''
+    #     Reference N, CA, C coords for a peptide backbone, used for setting camera
+    #     position and orientation.
+    #     '''
+    #     if not hasattr(self, '_peptide_ref_coords'):
+    #         import numpy
+    #         self._peptide_ref_coords = numpy.array([
+    #             [-0.844, 0.063, -0.438],
+    #             [0.326, 0.668, 0.249],
+    #             [1.680, 0.523, -0.433]
+    #         ])
+    #     return self._peptide_ref_coords
+    #
+    # @property
+    # def nucleic_ref_coords(self):
+    #     '''
+    #     Reference C2', C1', O4' coords for a nucleic acid residue, used for setting
+    #     camera position and orientation.
+    #     '''
+    #     if not hasattr(self, '_nucleic_ref_coords'):
+    #         import numpy
+    #         self._nucleic_ref_coords = numpy.array([
+    #             [0.822, -0.112, 1.280],
+    #             [0,0,0],
+    #             [0.624, -0.795, -0.985]
+    #         ])
+    #     return self._nucleic_ref_coords
+    #
+    # def _camera_ref_pos(self, distance):
+    #     from chimerax.geometry import Place
+    #     return Place(axes=[[1,0,0], [0,0,1],[0,-1,0]], origin=[0,-distance,0])
 
 # class Second:
 #
