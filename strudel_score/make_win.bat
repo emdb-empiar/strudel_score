@@ -17,7 +17,7 @@ IF "%%A" == "app-install" (
 REM	%PY_EXE% %PYP_EXE% install -t %SITE% pandas
 REM	%PY_EXE% %PYP_EXE% install -t %SITE% biopython
 REM	%PY_EXE% %PYP_EXE% install -t %SITE% mrcfile
-    %PY_EXE% %PYP_EXE% install --upgrade -t %SITE% lib\strudel-0.1-py3-none-any.whl
+    %PY_EXE% %PYP_EXE% install --upgrade -t %SITE% lib\threed_strudel-0.3-py3-none-any.whl
 	%CHIMERAX_EXE% -m PyQt5.pyrcc_main -o src/resources/resources_rc.py src/resources/resources.qrc
 	%CHIMERAX_EXE% --nogui --cmd "devel install .; exit"
 	BREAK
