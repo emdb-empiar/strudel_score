@@ -28,20 +28,20 @@ import shutil
 import os
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QMessageBox, QVBoxLayout, QHBoxLayout, QGridLayout, QFileDialog, QLabel, QPushButton,\
-    QMainWindow, QCheckBox
+    QWidget, QCheckBox, QFrame, QMenu
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.ticker import FormatStrFormatter
 import pandas as pd
 import numpy as np
 
-from threed_strudel.utils import bioUtils as bu
-from threed_strudel.chop.chopMap import ChopMap
-from threed_strudel.parse.mapParser import MapParser
+from threed_strudel.utils import bio_utils as bu
+from threed_strudel.chop.chop_map import ChopMap
+from threed_strudel.parse.map_parser import MapParser
 from threed_strudel import nomenclature
 try:
     from .functions import find_y_label_coordinates
-except ModuleNotFoundError:
+except ImportError:
     from functions import find_y_label_coordinates
 
 CHIMERA_MODE = True
@@ -79,15 +79,17 @@ class StrudelScore(Base):
         if CHIMERA_MODE:
             self.rc = Command(self.local_session)
             from chimerax.ui.gui import MainToolWindow
-            self.tool_window = MainToolWindow(self)
-            self.ui_area = self.tool_window.ui_area
+            self.tw = MainToolWindow(self)
+            self.ui_tw_area = self.tw.ui_area
         else:
-            self.ui_area = QMainWindow()
+            self.ui_tw_area = QtWidgets.QWidget()
+            # self.ui_tw_area = QMainWindow()
+        self.parent = self.ui_tw_area
 
         self.basedir = os.path.dirname(os.path.abspath(__file__))
         self.config_path = os.path.join(self.basedir, 'config.txt')
         self.libs_path = None
-
+        self.ui = None
         self.close_to_ligand = {}
         self.axvl = None
         self.axvtxt = None
@@ -99,21 +101,40 @@ class StrudelScore(Base):
         self.files_lbls = []
 
         # Layouts
+        main_layout = QVBoxLayout(self.parent)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(1)
+
+        self.parent.setLayout(main_layout)
+        if CHIMERA_MODE:
+            self.tw.manage(placement=None)
+
         self.left_plots_vbox = None
         self.mean_cc_grid = None
         # Figures
         self.right_plot_fig = None
         self.right_ax = None
+        self.right_annot = None
         self.right_plot_canvas = None
         # Widgets
         self.chain_selector = None
         self.left_axis_selector = None
         self.lib_selector = None
         self.current_chain_data = None
-        self.ui = None
-        self.init_ui()
-        if CHIMERA_MODE:
-            self.integrate()
+
+        mbar = self.create_menubar1(self.parent)
+        mbar.setFixedHeight(25)
+        main_layout.addWidget(mbar)
+        dw = self.load_designer_widget()
+        main_layout.addWidget(dw)
+        main_layout.setStretchFactor(mbar, 0)
+        # main_layout.addStretch(1)
+        # self.init_ui()
+
+
+
+        # if CHIMERA_MODE:
+        #     self.integrate()
 
         self.active_lib_path = None
         self.map_path = None
@@ -155,25 +176,24 @@ class StrudelScore(Base):
         if self.df is not None:
             # self.draw_right_plot()
             self.draw_left_plot_vline()
-        self.ui.show()
+        self.ui_tw_area.show()
 
-    def resized_actions(self, event):
-        if self.df is not None:
-            self.draw_right_plot()
-
-    def init_ui(self):
-        self.mw = QtWidgets.QMainWindow()
-        uifile = os.path.join(self.basedir, 'ui', 'qt_ui2_b.ui')
-        self.ui = uic.loadUi(uifile, self.mw)
-        self.ui.setWindowTitle('Strudel score')
-        self.setup_menubar()
-        self.chain_selector = self.ui.chain_comboBox
+    def load_designer_widget(self):
+        mw = QWidget()
+        uifile = os.path.join(self.basedir, 'ui', 'test_w.ui')
+        print("Load ui")
+        self.ui = ui = uic.loadUi(uifile, mw)
+        # self.ui.setWindowTitle('Strudel score')
+        self.chain_selector = ui.chain_comboBox
         self.resized = QtCore.pyqtSignal()
 
-        self.left_axis_selector = self.ui.y_axis_range_comboBox
-        self.right_axis_selector = self.ui.r_y_axis_range_comboBox
-        self.lib_selector = self.ui.lib_comboBox
-        self.mean_cc_grid = self.ui.mean_score_gridLayout
+        self.ui.metric_label.setHidden(True)
+        self.ui.metric_comboBox.setHidden(True)
+
+        self.left_axis_selector = ui.y_axis_range_comboBox
+        self.right_axis_selector = ui.r_y_axis_range_comboBox
+        self.lib_selector = ui.lib_comboBox
+        self.mean_cc_grid = ui.mean_score_gridLayout
         self.mean_cc_grid.setContentsMargins(0, 0, 0, 0)
         self.create_left_plots_container()
         self.right_plot_fig = Figure()
@@ -181,24 +201,67 @@ class StrudelScore(Base):
         self.right_plot_canvas = FigureCanvas(self.right_plot_fig)
         self.right_plot_fig.subplots_adjust(left=0.25, top=0.95, bottom=0.08)
         self.create_right_plot_container()
-        w = self.ui.width()
-        self.ui.plots_splitter.setSizes([int(w * .8), int(w * .2)])
+        w = ui.width()
+        ui.plots_splitter.setSizes([int(w * .8), int(w * .2)])
         self.set_labels_style()
-        self.mw.resizeEvent = self.resized_actions
+        mw.resizeEvent = self.resized_actions
 
-        self.ui.same_map_checkBox.stateChanged.connect(self.update_motifs_view)
-        self.ui.same_model_checkBox.stateChanged.connect(self.update_motifs_view)
-        self.ui.top_map_checkBox.stateChanged.connect(self.update_motifs_view)
-        self.ui.top_model_checkBox.stateChanged.connect(self.update_motifs_view)
+        ui.same_map_checkBox.stateChanged.connect(self.update_motifs_view)
+        ui.same_model_checkBox.stateChanged.connect(self.update_motifs_view)
+        ui.top_map_checkBox.stateChanged.connect(self.update_motifs_view)
+        ui.top_model_checkBox.stateChanged.connect(self.update_motifs_view)
+        return mw
+
+    def resized_actions(self, event):
+        if self.df is not None:
+            self.draw_right_plot()
+
+    # def init_ui(self):
+    #     print("Creating main")
+    #     self.mw = QtWidgets.QMainWindow()
+    #     # self.mw = QtWidgets.QWidget()
+    #     uifile = os.path.join(self.basedir, 'ui', 'qt_ui2_b.ui')
+    #     print("Load ui")
+    #     self.ui = uic.loadUi(uifile, self.mw)
+    #     self.ui.setWindowTitle('Strudel score')
+    #     self.setup_menubar()
+    #     self.chain_selector = self.ui.chain_comboBox
+    #     self.resized = QtCore.pyqtSignal()
+    #
+    #     # self.ui.metric_label.setHidden(True)
+    #     # self.ui.metric_comboBox.setHidden(True)
+    #
+    #     self.left_axis_selector = self.ui.y_axis_range_comboBox
+    #     self.right_axis_selector = self.ui.r_y_axis_range_comboBox
+    #     self.lib_selector = self.ui.lib_comboBox
+    #     self.mean_cc_grid = self.ui.mean_score_gridLayout
+    #     self.mean_cc_grid.setContentsMargins(0, 0, 0, 0)
+    #     self.create_left_plots_container()
+    #     self.right_plot_fig = Figure()
+    #     self.right_ax = self.right_plot_fig.add_subplot(111)
+    #     self.right_plot_canvas = FigureCanvas(self.right_plot_fig)
+    #     self.right_plot_fig.subplots_adjust(left=0.25, top=0.95, bottom=0.08)
+    #     self.create_right_plot_container()
+    #     w = self.ui.width()
+    #     self.ui.plots_splitter.setSizes([int(w * .8), int(w * .2)])
+    #     self.set_labels_style()
+    #     self.mw.resizeEvent = self.resized_actions
+    #
+    #     self.ui.same_map_checkBox.stateChanged.connect(self.update_motifs_view)
+    #     self.ui.same_model_checkBox.stateChanged.connect(self.update_motifs_view)
+    #     self.ui.top_map_checkBox.stateChanged.connect(self.update_motifs_view)
+    #     self.ui.top_model_checkBox.stateChanged.connect(self.update_motifs_view)
 
     def integrate(self):
-        parent = self.ui_area
+        parent = self.ui_tw_area
         layout = QtWidgets.QHBoxLayout()
+        print("Insert main in main")
         layout.addWidget(self.mw)
         layout.setStretchFactor(self.mw, 0)
         layout.setContentsMargins(0, 0, 0, 0)
         parent.setLayout(layout)
-        self.tool_window.manage(placement=None)
+        self.tw.manage(placement=None)
+        print("Integrated")
 
     def inject_data(self):
         print('Inject data called')
@@ -238,6 +301,53 @@ class StrudelScore(Base):
         self.ui.actionLoad_rotamers.triggered.connect(self.load_all_rotamers)
         self.ui.actionClear_rotamers.triggered.connect(self.clear_rotamers)
         menu_bar.setNativeMenuBar(False)
+
+    def create_menubar1(self, parent):
+        mbar = QFrame(parent)
+        mbar.setStyleSheet('QFrame { background-color: white; }')
+        layout = QHBoxLayout(mbar)
+        # layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        file_menu_entries = (
+            ('Open Project', self.open_project),
+            ('separator', None),
+            ('Set Motif Library', self.set_library)
+        )
+
+        fb = QPushButton('File', mbar)
+        button_style = 'QPushButton { border: none; } QPushButton::menu-indicator { image: none; }'
+        fb.setStyleSheet(button_style)
+        layout.addWidget(fb)
+        fmenu = QMenu(fb)
+        fb.setMenu(fmenu)
+        for text, func in file_menu_entries:
+            if text == 'separator':
+                fmenu.addSeparator()
+            else:
+                fmenu.addAction(text, func)
+        # layout.addStretch(1)
+
+        action_menu_entries = (
+            ('Chop residue', self.chop_selected_residue),
+            ('Chop residue environement sensitive', self.chop_selected_residue_env_sensitive),
+            ('separator', None),
+            ('Load rotamers', self.load_all_rotamers),
+            ('Clear rotamers', self.clear_rotamers)
+        )
+
+        ab = QPushButton('Actions', mbar)
+        ab.setStyleSheet(button_style)
+        layout.addWidget(ab)
+        amenu = QMenu(ab)
+        ab.setMenu(amenu)
+        for text, func in action_menu_entries:
+            if text == 'separator':
+                amenu.addSeparator()
+            else:
+                amenu.addAction(text, func)
+        layout.addStretch(1)
+        return mbar
 
     def set_library(self):
         lib_path = str(QFileDialog.getExistingDirectory())
@@ -366,7 +476,10 @@ class StrudelScore(Base):
             self.close_to_ligand[chain.get_id()] = tmp
 
     def clear_tmp(self):
-        shutil.rmtree(self.tmp)
+        try:
+            shutil.rmtree(self.tmp)
+        except FileNotFoundError:
+            pass
         os.makedirs(self.tmp)
 
     def run_x(self, command):
@@ -585,13 +698,13 @@ class StrudelScore(Base):
         if direction == 'left':
             if index > 0:
                 self.active_residue = avail_res[index-1]
-                self.draw_right_plot()
-                self.draw_left_plot_vline()
+                # self.draw_right_plot()
+                # self.draw_left_plot_vline()
         elif direction == 'right':
             if index < len(avail_res):
                 self.active_residue = avail_res[index + 1]
-                self.draw_right_plot()
-                self.draw_left_plot_vline()
+                # self.draw_right_plot()
+                # self.draw_left_plot_vline()
         elif direction == 'red_left':
             red_res = reversed(red_res)
             if index > 0:
@@ -599,18 +712,23 @@ class StrudelScore(Base):
                     if res < self.active_residue:
                         self.active_residue = res
                         break
-                self.draw_right_plot()
-                self.draw_left_plot_vline()
+                # self.draw_right_plot()
+                # self.draw_left_plot_vline()
         elif direction == 'red_right':
             if index < len(avail_res):
                 for res in red_res:
                     if res > self.active_residue:
                         self.active_residue = res
                         break
-                self.draw_right_plot()
-                self.draw_left_plot_vline()
+                # self.draw_right_plot()
+                # self.draw_left_plot_vline()
         else:
-            pass
+            return
+        self.draw_right_plot()
+        if CHIMERA_MODE:
+            self.view_residue()
+            self.draw_right_plot()
+        self.draw_left_plot_vline()
 
     def show_selected_residue(self):
         self.clear_residue_data()
@@ -619,23 +737,15 @@ class StrudelScore(Base):
 
     def navigate_residue_left(self):
         self.navigate_residue('left')
-        if CHIMERA_MODE:
-            self.view_residue()
 
     def navigate_residue_right(self):
         self.navigate_residue('right')
-        if CHIMERA_MODE:
-            self.view_residue()
 
     def navigate_red_residue_left(self):
         self.navigate_residue('red_left')
-        if CHIMERA_MODE:
-            self.view_residue()
 
     def navigate_red_residue_right(self):
         self.navigate_residue('red_right')
-        if CHIMERA_MODE:
-            self.view_residue()
 
     def update_left_plots(self):
         y_range = self.left_axis_selector.currentText()
@@ -760,15 +870,25 @@ class StrudelScore(Base):
             #         z = (row[self.k.SAME_TYPE_CC] - aver) / all_corr.std()
             #         z_green_y.append(z)
 
+            # ax.plot(green_x, green_y, 'o', c=self.P.l_same_type_color,
+            #         markersize=self.P.l_marker_size,
+            #         picker=self.P.l_picker_size)
+
             ax.plot(green_x, green_y, 'o', c=self.P.l_same_type_color,
                     markersize=self.P.l_marker_size,
-                    picker=self.P.l_picker_size)
+                    picker=True, pickradius=self.P.l_picker_size)
+            # ax.plot(red_x, red_y, 'o', c=self.P.l_top_type_color,
+            #         markersize=self.P.l_marker_size,
+            #         picker=self.P.l_picker_size)
             ax.plot(red_x, red_y, 'o', c=self.P.l_top_type_color,
                     markersize=self.P.l_marker_size,
-                    picker=self.P.l_picker_size)
+                    picker=True, pickradius=self.P.l_picker_size)
+            # ax.plot(blue_x, blue_y, 'o', c=self.P.l_same_type_lowcorr_color,
+            #         markersize=self.P.l_marker_size,
+            #         picker=self.P.l_picker_size)
             ax.plot(blue_x, blue_y, 'o', c=self.P.l_same_type_lowcorr_color,
                     markersize=self.P.l_marker_size,
-                    picker=self.P.l_picker_size)
+                    picker=True, pickradius=self.P.l_picker_size)
             try:
                 if self.close_to_ligand[self.active_chain]:
                     rl_x = [r for r in self.close_to_ligand[self.active_chain] if r in green_x]
@@ -820,9 +940,12 @@ class StrudelScore(Base):
         thisline = event.artist
         xdata = thisline.get_xdata()
         ind = event.ind
+        self.clear_residue_data()
         self.active_residue = xdata[ind][0]
         self.draw_right_plot()
         self.draw_left_plot_vline()
+        self.view_residue()
+        self.draw_right_plot()
 
     def draw_right_plot(self, max_res_display=20, y_max=1):
         metric = self.ui.metric_comboBox.currentText()
@@ -885,16 +1008,20 @@ class StrudelScore(Base):
                 self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3, c='r')
                 self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c='r')
                 self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color='r', size=text_size,
-                                   picker=text_size, verticalalignment='center', horizontalalignment='left')
+                                   picker=True, verticalalignment='center', horizontalalignment='left')
             else:
                 self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3, c='g')
                 self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c='g')
                 self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color='g', size=text_size,
-                                   picker=text_size, verticalalignment='center', horizontalalignment='left')
+                                   picker=True, verticalalignment='center', horizontalalignment='left')
             for motif in self.open_motifs:
                 if y_txt[i].lower() == motif.type and motif.show:
                     self.right_ax.text(r_nr - 3 * text_w, y_lbls[i], '*', size=text_size, color=self.P.vline_color,
                                        verticalalignment='center')
+        self.right_annot = self.right_ax.annotate("", xy=(0, 0), xytext=(20, 20), textcoords="offset points",
+                            bbox=dict(boxstyle="round", fc="w"),
+                            arrowprops=dict(arrowstyle="->"))
+        self.right_annot.set_visible(False)
 
         self.right_ax.set_ylim(y_min, y_max)
         self.right_ax.set_xlim(r_nr - 0.7, r_nr + 0.3)
@@ -904,7 +1031,50 @@ class StrudelScore(Base):
         self.right_ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
         self.right_plot_fig.subplots_adjust(left=0.25, top=0.98, bottom=0.08)
         self.right_plot_fig.canvas.mpl_connect('pick_event', self.switch_motif)
+        # self.right_plot_fig.canvas.mpl_connect('motion_notify_event', self.right_plot_label_hover)
+        # self.right_plot_fig.canvas.mpl_connect('axes_enter_event', self.enter_axes)
+        # self.right_plot_fig.canvas.mpl_connect('axes_leave_event', self.leave_axes)
         self.right_plot_fig.canvas.draw_idle()
+
+    # def right_plot_label_hover(self, event):
+    #     # thisline = event.artist
+    #     # xdata = thisline.get_xdata()
+    #     thisline = event.artist
+    #     res_type = thisline.get_text().lower()
+    #     print(f'Hover over {res_type}')
+    #
+    #     def update_annot(ind):
+    #
+    #         # pos = sc.get_offsets()[ind["ind"][0]]
+    #         pos = [1,1]
+    #         self.right_annot.xy = pos
+    #         text = 'some text'
+    #         self.right_annot.set_text(text)
+    #         # self.right_annot.get_bbox_patch().set_facecolor(cmap(norm(c[ind["ind"][0]])))
+    #         # self.right_annot.get_bbox_patch().set_alpha(0.4)
+    #
+    #     vis = self.right_annot.get_visible()
+    #     if event.inaxes == self.right_ax:
+    #         cont, ind = self.right_ax.contains(event)
+    #         if cont:
+    #             update_annot(ind)
+    #             self.right_annot.set_visible(True)
+    #             self.right_plot_fig.canvas.draw_idle()
+    #         else:
+    #             if vis:
+    #                 self.right_annot.set_visible(False)
+    #                 self.right_plot_fig.canvas.draw_idle()
+    #
+    # def enter_axes(self, event):
+    #     print('enter_axes', event.inaxes)
+    #     event.inaxes.patch.set_facecolor('yellow')
+    #     event.canvas.draw()
+    #
+    # def leave_axes(self, event):
+    #     print('leave_axes', event.inaxes)
+    #     event.inaxes.patch.set_facecolor('white')
+    #     event.canvas.draw()
+
 
     def switch_motif(self, event):
         thisline = event.artist
@@ -994,7 +1164,7 @@ class StrudelScore(Base):
     def create_left_axis_y_label(self):
         pic = QtGui.QPicture()
         height = self.P.left_plots_H
-        pic.setBoundingRect(QtCore.QRect(0, -height / 2, 20, height - 120))
+        pic.setBoundingRect(QtCore.QRect(0, int(-height / 2), 20, int(height - 120)))
         y_label = QtGui.QPainter(pic)
         y_label.rotate(-90)
         document = QtGui.QTextDocument()
@@ -1088,7 +1258,7 @@ class StrudelScore(Base):
                     # print(index, name[:-4]+'z', (value - aver) / std)
             # break
         df[self.k.TOP_SAME_TYPE_DIFF_Z] = (df[self.k.TOP_Z] - df[self.k.SAME_TYPE_Z]) / df[self.k.TOP_Z] * df[self.k.STD]
-        df.to_csv('/Volumes/data/test.csv')
+        # df.to_csv('/Volumes/data/test.csv')
     def get_chain_list(self, df):
         chains = df[self.k.CHAIN].unique()
         # chains = sorted(chains)
@@ -1203,7 +1373,7 @@ class StrudelScore(Base):
         out_map_path = os.path.join(self.tmp, name_prefix + '.mrc')
         out_res_path = os.path.join(self.tmp, name_prefix + '.cif')
         if not os.path.exists(out_map_path) and not os.path.exists(out_res_path):
-            cube_map_obj, shifts = self.chop.chop_cube_list(res, self.map_obj, 4, zero_origin=False)
+            cube_map_obj, shifts = self.chop.chop_cube(res, self.map_obj, 4, zero_origin=False)
             cube_map_obj.grid_resample_emda(0.25)
             cube_map_obj.write_map(os.path.join(self.tmp, name_prefix + 'cube.mrc'))
             struct = bu.residues2structure(res)
@@ -1223,7 +1393,8 @@ class StrudelScore(Base):
         out_map_path = os.path.join(self.tmp, name_prefix + '.mrc')
         out_res_path = os.path.join(self.tmp, name_prefix + '.cif')
         if not os.path.exists(out_map_path) and not os.path.exists(out_res_path):
-            cube_map_obj, shifts = self.chop.chop_cube_list(res, self.map_obj, 4, zero_origin=False)
+            print(res)
+            cube_map_obj, shifts = self.chop.chop_cube(res, self.map_obj, 4, zero_origin=False)
             cube_map_obj.grid_resample_emda(0.25)
             cube_map_obj.write_map(os.path.join(self.tmp, name_prefix + 'cube.mrc'))
             struct = bu.residues2structure(res)
@@ -1231,7 +1402,7 @@ class StrudelScore(Base):
             bu.save_model(struct, out_res_path)
             for residue in struct.get_residues():
                 bu.del_main_chain(residue)
-            fin_map = self.chop.chop_soft_radius4(struct, cube_map_obj, self.model_obj, shifts, radius=2, soft_radius=1)
+            fin_map = self.chop.chop_soft_radius_watershed(struct, cube_map_obj, self.model_obj, shifts, radius=2, soft_radius=1)
             fin_map.write_map(out_map_path)
         return out_map_path, out_res_path
 
@@ -1322,10 +1493,10 @@ class StrudelScore(Base):
                     same_map, same_model = self.display_motif(lib_same_map_path, lib_same_model_path, same_type_matrix,
                                                               map_color=self.P.same_map_color,
                                                               model_color=self.P.same_model_color)
-                    same_map.display = False
-                    same_model.display = False
+                    same_map.display = self.ui.same_map_checkBox.isChecked()
+                    same_model.display = self.ui.same_model_checkBox.isChecked()
                     self.open_motifs.append(self.Motif(type=same_type, map_id=same_map.id_string, model_id=same_model.id_string,
-                                                       show=False, mtp='same'))
+                                                       show=self.ui.same_map_checkBox.isChecked(), mtp='same'))
                 else:
                     text = f'Missing files in {self.active_lib_path}\n' \
                            f'{same_type_name + ".mrc"},  {same_type_name + ".cif"}'
@@ -1343,10 +1514,10 @@ class StrudelScore(Base):
                                                                 top_motif_matrix,
                                                                 map_color=self.P.top_map_color,
                                                                 model_color=self.P.top_model_color)
-                        top_map.display = False
-                        top_model.display = False
+                        top_map.display = self.ui.top_map_checkBox.isChecked()
+                        top_model.display = self.ui.top_model_checkBox.isChecked()
                         self.open_motifs.append(self.Motif(type=top_type, map_id=top_map.id_string, model_id=top_model.id_string,
-                                                           show=False, mtp='top'))
+                                                           show=self.ui.top_map_checkBox.isChecked(), mtp='top'))
 
                     else:
                         text = f'Missing files in {self.active_lib_path}\n' \
@@ -1410,183 +1581,9 @@ class StrudelScore(Base):
                       ui.lib_label,
                       ui.chain_label,
                       ui.mean_score_label,
-                      ui.in_row_label]:
+                      ui.in_row_label,
+                      ui.metric_label]:
             label.setStyleSheet(f"QLabel {self.P.label_titles_style}")
-
-    # def _block_clipper_spotlights(self):
-    #     from chimerax.clipper import get_all_symmetry_handlers
-    #     sym_handlers = get_all_symmetry_handlers(self.session)
-    #     for sh in sym_handlers:
-    #         sh.triggers._triggers['spotlight moved'].block()
-    #
-    # def _release_clipper_spotlights(self):
-    #     from chimerax.clipper import get_all_symmetry_handlers
-    #     sym_handlers = get_all_symmetry_handlers(self.session)
-    #     for sh in sym_handlers:
-    #         sh.triggers._triggers['spotlight moved'].release()
-    #         if sh.spotlight_mode:
-    #             sh.update()
-
-    # def _new_camera_position(self, residue, block_spotlight=False):
-    #     session = self.session
-    #     r = residue
-    #     from chimerax.atomic import Residue, Atoms
-    #     pt = residue.polymer_type
-    #     if pt == Residue.PT_NONE:
-    #         # No preferred orientation
-    #         ref_coords = None
-    #         target_coords = r.atoms.coords
-    #         centroid = target_coords.mean(axis=0)
-    #     elif pt == Residue.PT_AMINO:
-    #         ref_coords = self.peptide_ref_coords
-    #         try:
-    #             target_coords = Atoms([r.find_atom(name) for name in ('N', 'CA', 'C')]).coords
-    #             centroid = target_coords[1]
-    #         except ValueError:
-    #             # Either a key atom is missing, or this is a special residue
-    #             # e.g. NH2
-    #             ref_coords=None
-    #             target_coords = r.atoms.coords
-    #             centroid = target_coords.mean(axis=0)
-    #     elif pt == Residue.PT_NUCLEIC:
-    #         ref_coords = self.nucleic_ref_coords
-    #         try:
-    #             target_coords = Atoms(
-    #                 [r.find_atom(name) for name in ("C2'", "C1'", "O4'")]
-    #             ).coords
-    #             centroid=target_coords[1]
-    #         except ValueError:
-    #             ref_coords=None
-    #             target_coords = r.atoms.coords
-    #             centroid = target_coords.mean(axis=0)
-    #
-    #     c = session.main_view.camera
-    #     cp = c.position
-    #     old_cofr = session.main_view.center_of_rotation
-    #
-    #
-    #
-    #     if ref_coords is not None:
-    #         from chimerax.geometry import align_points, Place
-    #         p, rms = align_points(ref_coords, target_coords)
-    #     else:
-    #         from chimerax.geometry import Place
-    #         p = Place(origin=centroid)
-    #
-    #     tc = self._camera_ref_pos(10)
-    #     np = p*tc
-    #     new_cofr = centroid
-    #     fw = c.field_width
-    #     new_fw = 10*2
-    #
-    #     def interpolate_camera(session, f, cp=cp, np=np, oc=old_cofr, nc=new_cofr, fw=fw, nfw=new_fw, vr=10, center=np.inverse()*centroid, frames=15):
-    #         frac = (f+1)/frames
-    #         v = session.main_view
-    #         c = v.camera
-    #         p = np if f+1==frames else cp.interpolate(np, center, frac=frac)
-    #         cofr = oc+frac*(nc-oc)
-    #         c.position = p
-    #         vd = c.view_direction()
-    #         cp = v.clip_planes
-    #         ncm, fcm = (0.5, 0.5)
-    #         cp.set_clip_position('near', cofr-ncm*vr*vd, v)
-    #         cp.set_clip_position('far', cofr+fcm*vr*vd, v)
-    #         if c.name=='orthographic':
-    #             c.field_width = fw+frac*(nfw-fw)
-    #
-    #     from chimerax.geometry import distance
-    #     if distance(new_cofr, old_cofr) < 10:
-    #         if block_spotlight:
-    #             self._block_clipper_spotlights()
-    #             # from .delayed_reaction import call_after_n_events
-    #             self.call_after_n_events(self.session.triggers, 'frame drawn', 15, self._release_clipper_spotlights, [])
-    #         from chimerax.core.commands import motion
-    #         motion.CallForNFrames(interpolate_camera, 15, session)
-    #     else:
-    #         self.run_x('wait')
-    #         self._block_clipper_spotlights()
-    #         # from .delayed_reaction import call_after_n_events
-    #         self.call_after_n_events(self.session.triggers, 'frame drawn', 5, self._release_clipper_spotlights, [])
-    #         # interpolate_camera(session, 0, frames=1)
-    #         from chimerax.core.commands import motion
-    #         motion.CallForNFrames(interpolate_camera, 5, session)
-    #
-    # @staticmethod
-    # def call_after_n_events(triggerset, trigger_name, n, callback, callback_args):
-    #     class _cb:
-    #         def __init__(self, triggerset, trigger_name, n, cb, cb_args):
-    #             self.count = 0
-    #             self.max_count = n
-    #             self.cb = cb
-    #             self.cb_args = cb_args
-    #             triggerset.add_handler(trigger_name, self.callback)
-    #
-    #         def callback(self, *_):
-    #             c = self.count = self.count + 1
-    #             if c >= self.max_count:
-    #                 self.cb(*self.cb_args)
-    #                 from chimerax.core.triggerset import DEREGISTER
-    #                 return DEREGISTER
-    #
-    #     _cb(triggerset, trigger_name, n, callback, callback_args)
-    #
-    # @property
-    # def peptide_ref_coords(self):
-    #     '''
-    #     Reference N, CA, C coords for a peptide backbone, used for setting camera
-    #     position and orientation.
-    #     '''
-    #     if not hasattr(self, '_peptide_ref_coords'):
-    #         import numpy
-    #         self._peptide_ref_coords = numpy.array([
-    #             [-0.844, 0.063, -0.438],
-    #             [0.326, 0.668, 0.249],
-    #             [1.680, 0.523, -0.433]
-    #         ])
-    #     return self._peptide_ref_coords
-    #
-    # @property
-    # def nucleic_ref_coords(self):
-    #     '''
-    #     Reference C2', C1', O4' coords for a nucleic acid residue, used for setting
-    #     camera position and orientation.
-    #     '''
-    #     if not hasattr(self, '_nucleic_ref_coords'):
-    #         import numpy
-    #         self._nucleic_ref_coords = numpy.array([
-    #             [0.822, -0.112, 1.280],
-    #             [0,0,0],
-    #             [0.624, -0.795, -0.985]
-    #         ])
-    #     return self._nucleic_ref_coords
-    #
-    # def _camera_ref_pos(self, distance):
-    #     from chimerax.geometry import Place
-    #     return Place(axes=[[1,0,0], [0,0,1],[0,-1,0]], origin=[0,-distance,0])
-
-# class Second:
-#
-#     def __init__(self, ts):
-#         self.triggerset = ts
-#         self.handler = None
-#
-#     def trigger_handler(self, trigger, trigger_data):
-#         print('trigger =', trigger)
-#         print('  triggerset =', self.triggerset)
-#         print('  handler =', self.handler)
-#         print('  trigger_data =', trigger_data)
-#         if self.triggerset and self.handler:
-#             self.triggerset.remove_handler(self.handler)
-#             self.handler = None
-#
-# h1 = ts.add_handler('conrad', first)
-# o = Second(ts)
-# o.handler = ts.add_handler('conrad', o.trigger_handler)
-#
-# ts.activate_trigger('conrad', 1)
-# print()
-# ts.activate_trigger('conrad', 2)
-
 
 class DictKeys:
     RES_TYPE = 'residue_type'
