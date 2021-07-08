@@ -1,6 +1,11 @@
 from math import fabs
 import time
+import requests
+import os
+import re
 
+
+CHUNK_SIZE = 512 * 1024
 
 def find_y_label_coordinates(lst, y_range, widget_height, label_size, spacing=0.9):
     lst = [i for i in lst if y_range[0] < i < y_range[1]]
@@ -113,3 +118,104 @@ def cluster_spreed_points(lst, min_d):
         else:
             out.append(cluster[0])
     return out
+
+
+def g_drive_download(url, out_path):
+    orig_url = url
+    sess = requests.session()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36"}
+    while True:
+        res = sess.get(url, headers=headers, stream=True)
+        if "Content-Disposition" in res.headers:
+            # This is the file
+            break
+        url = get_url_from_gdrive_confirmation(res.text)
+
+        if url is None:
+            print("Permission denied:", orig_url)
+            print(
+                "Maybe you need to change permission over "
+                "'Anyone with the link'?")
+            return
+
+    with open(out_path, "wb") as f:
+        # total = res.headers.get("Content-Length")
+        size = 0
+        for chunk in res.iter_content(chunk_size=CHUNK_SIZE):
+            if total is not None:
+                total = int(total)
+            f.write(chunk)
+            print((size + len(chunk) / 1000000))
+            size += len(chunk)
+
+
+def get_url_from_gdrive_confirmation(contents):
+    url = ""
+    for line in contents.splitlines():
+        m = re.search(r'href="(\/uc\?export=download[^"]+)', line)
+        if m:
+            url = "https://docs.google.com" + m.groups()[0]
+            url = url.replace("&amp;", "&")
+            return url
+        m = re.search("confirm=([^;&]+)", line)
+        if m:
+            confirm = m.groups()[0]
+            url = re.sub(
+                r"confirm=([^;&]+)", r"confirm={}".format(confirm), url
+            )
+            return url
+        m = re.search('"downloadUrl":"([^"]+)', line)
+        if m:
+            url = m.groups()[0]
+            url = url.replace("\\u003d", "=")
+            url = url.replace("\\u0026", "&")
+            return url
+        m = re.search('<p class="uc-error-subcaption">(.*)</p>', line)
+        if m:
+            error = m.groups()[0]
+            raise RuntimeError(error)
+
+
+def unpack_tar(file, output):
+    import tarfile
+    my_tar = tarfile.open(os.path.abspath(file))
+    my_tar.extractall(output)
+    my_tar.close()
+
+
+def read_gfile(url):
+    orig_url = url
+    sess = requests.session()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36"}
+    while True:
+        res = sess.get(url, headers=headers, stream=True)
+        if "Content-Disposition" in res.headers:
+            # This is the file
+            break
+        url = get_url_from_gdrive_confirmation(res.text)
+
+        if url is None:
+            print("Permission denied:", orig_url)
+            print(
+                "Maybe you need to change permission over "
+                "'Anyone with the link'?")
+            return
+
+    chunks = [chunk for chunk in res.iter_content(chunk_size=CHUNK_SIZE)]
+    return chunks[0].decode("utf-8")
+
+
+def read_config_value(path, key):
+    try:
+        with open(path, 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                words = line.partition(' = ')
+                if key == words[0]:
+                    return words[-1]
+    except FileNotFoundError:
+        return None
+
+

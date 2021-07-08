@@ -1,1 +1,2 @@
 lib_path = /Volumes/data/Work/lib-1.3/libs
+lib_url = https://drive.google.com/uc?id=160crxEm31zvfnWrW9HyJak3xGVXhvI7g

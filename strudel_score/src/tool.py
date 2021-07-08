@@ -71,7 +71,7 @@ else:
 class StrudelScore(Base):
     SESSION_ENDURING = True
     SESSION_SAVE = False         # No local_session saving for now
-    display_name = "Strudel Tool"
+    display_name = "Strudel Score"
 
     def __init__(self, session, tool_name):
         Base.__init__(self, session, tool_name)
@@ -99,12 +99,12 @@ class StrudelScore(Base):
         self.k = DictKeys()
         self.line_h = 18
         self.files_lbls = []
+        self.clear_indices = []
 
         # Layouts
         main_layout = QVBoxLayout(self.parent)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(1)
-
         self.parent.setLayout(main_layout)
         if CHIMERA_MODE:
             self.tw.manage(placement=None)
@@ -172,11 +172,13 @@ class StrudelScore(Base):
         self.Motif = recordtype('Motif', ['type', 'map_id', 'model_id', 'show', 'mtp'])
 
         self.inject_data()
-        self.ui.show()
+        # self.ui.show()
         if self.df is not None:
             # self.draw_right_plot()
             self.draw_left_plot_vline()
-        self.ui_tw_area.show()
+        # self.ui_tw_area.show()
+        if CHIMERA_MODE:
+            session.strudel = self
 
     def load_designer_widget(self):
         mw = QWidget()
@@ -349,9 +351,17 @@ class StrudelScore(Base):
         layout.addStretch(1)
         return mbar
 
-    def set_library(self):
-        lib_path = str(QFileDialog.getExistingDirectory())
-        self.libs_path = lib_path
+    def set_library(self, lib_path=None):
+        if lib_path is None:
+            lib_path = str(QFileDialog.getExistingDirectory())
+
+        files = os.listdir(lib_path)
+        files = [f for f in files if f.startswith('motifs_')]
+        if len(files) == 0:
+            self.show_mesage("Error", f"Could not find strudel libraries in the directory {lib_path}\n"
+                             f"Please select a directory which contain folders named motifs_***")
+            return
+
         record = f'lib_path={lib_path}\n'
         lines = [record]
         try:
@@ -365,6 +375,8 @@ class StrudelScore(Base):
         with open(self.config_path, 'w') as f:
             for line in lines:
                 f.write(line)
+        self.libs_path = lib_path
+        self.show_mesage('Info', f'Strudel library set to: {lib_path}')
 
     def read_config(self):
         path = None
@@ -395,9 +407,13 @@ class StrudelScore(Base):
         msg.setIcon(QMessageBox.Warning)
         x = msg.exec_()
 
-    def open_project(self):
+    def download_library(self):
+        pass
+
+    def open_project(self, set_path=None):
         proj_path = None
-        set_path = str(QFileDialog.getExistingDirectory())
+        if set_path is None:
+            set_path = str(QFileDialog.getExistingDirectory())
         try:
             folders = os.listdir(set_path)
         except FileNotFoundError:
@@ -418,7 +434,7 @@ class StrudelScore(Base):
             self.load_map_model()
             self.inject_data()
             self.clear_tmp()
-            self.ui.show()
+            # self.ui.show()
             self.read_config()
             self.set_active_lib()
 
@@ -427,6 +443,7 @@ class StrudelScore(Base):
 
     def set_active_lib(self):
         avail_libs = os.listdir(self.libs_path)
+        avail_libs = [l for l in avail_libs if not l.startswith('.')]
         lib_path = None
         for l in avail_libs:
             if l.endswith(self.lib_selector.currentText()):
@@ -632,14 +649,18 @@ class StrudelScore(Base):
         self.active_res_map_obj = None
         self.active_res_model_obj = None
         if CHIMERA_MODE:
-            self.run_x('close #2-100')
+            # self.run_x('close #2-100')
+            print(self.clear_indices)
+            for index in self.clear_indices:
+                self.run_x(f'close #{index}')
+            self.clear_indices = []
 
     def create_left_plots_container(self):
         ui = self.ui
         grid = QGridLayout()
         y_label = QLabel()
         y_label.setPicture(self.create_left_axis_y_label())
-        y_label.show()
+        # y_label.show()
         x_label = QLabel()
         txt_lst = self.P.x_axis_text
         x_label_text = f'<font style="{self.P.grey_text} {self.P.left_plot_axis_font}">{txt_lst[0]} </font>' \
@@ -671,6 +692,7 @@ class StrudelScore(Base):
         right_red = self.ui.right_red_pushButton
 
         self.ui.right_plot_show_pushButton.clicked.connect(self.show_selected_residue)
+        self.ui.right_plot_show_pushButton.setHidden(True)
         left_arrow.clicked.connect(self.navigate_residue_left)
         right_arrow.clicked.connect(self.navigate_residue_right)
         left_red.clicked.connect(self.navigate_red_residue_left)
@@ -684,7 +706,7 @@ class StrudelScore(Base):
         frame.setAutoFillBackground(True)
         p.setColor(frame.backgroundRole(), QtCore.Qt.white)
         frame.setPalette(p)
-        frame.show()
+        # frame.show()
 
     def navigate_residue(self, direction):
         data = self.current_chain_data
@@ -874,19 +896,19 @@ class StrudelScore(Base):
             #         markersize=self.P.l_marker_size,
             #         picker=self.P.l_picker_size)
 
-            ax.plot(green_x, green_y, 'o', c=self.P.l_same_type_color,
+            ax.plot(green_x, green_y, 'o', c=self.P.same_type_c,
                     markersize=self.P.l_marker_size,
                     picker=True, pickradius=self.P.l_picker_size)
             # ax.plot(red_x, red_y, 'o', c=self.P.l_top_type_color,
             #         markersize=self.P.l_marker_size,
             #         picker=self.P.l_picker_size)
-            ax.plot(red_x, red_y, 'o', c=self.P.l_top_type_color,
+            ax.plot(red_x, red_y, 'o', c=self.P.outlier_c,
                     markersize=self.P.l_marker_size,
                     picker=True, pickradius=self.P.l_picker_size)
             # ax.plot(blue_x, blue_y, 'o', c=self.P.l_same_type_lowcorr_color,
             #         markersize=self.P.l_marker_size,
             #         picker=self.P.l_picker_size)
-            ax.plot(blue_x, blue_y, 'o', c=self.P.l_same_type_lowcorr_color,
+            ax.plot(blue_x, blue_y, 'o', c=self.P.very_low_c,
                     markersize=self.P.l_marker_size,
                     picker=True, pickradius=self.P.l_picker_size)
             try:
@@ -899,7 +921,7 @@ class StrudelScore(Base):
 
             for index, row in red_row_data.iterrows():
                 ax.text(row[self.k.RES_NR], row[top_key], row[self.k.M_TOP_TYPE].upper(),
-                        color=self.P.l_top_type_color,
+                        color=self.P.outlier_c,
                         size=txt_size, horizontalalignment='left', verticalalignment='bottom', rotation=50)
 
                 ax.text(row[self.k.RES_NR], row[same_key], row[self.k.RES_TYPE].upper(),
@@ -951,6 +973,8 @@ class StrudelScore(Base):
         metric = self.ui.metric_comboBox.currentText()
         width = self.right_plot_canvas.width()
         height = self.right_plot_canvas.height()
+        if height == 0:
+            return
         self.right_ax.clear()
 
         r_nr = self.active_residue
@@ -1005,14 +1029,16 @@ class StrudelScore(Base):
         # Consider using dash option for labels
         for i in range(len(y_lbls)):
             if same_type != y_txt[i]:
-                self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3, c='r')
-                self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c='r')
-                self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color='r', size=text_size,
+                self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3,
+                                   c=self.P.outlier_c)
+                self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c=self.P.outlier_c)
+                self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color=self.P.outlier_c, size=text_size,
                                    picker=True, verticalalignment='center', horizontalalignment='left')
             else:
-                self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3, c='g')
-                self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c='g')
-                self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color='g', size=text_size,
+                self.right_ax.plot([r_nr - 1.3 * text_w, r_nr], [y_lbls[i], y_lst[i]], '--', linewidth=0.3,
+                                   c=self.P.same_type_c)
+                self.right_ax.plot(r_nr, y_lst[i], 'o', markersize=2.5, c=self.P.same_type_c)
+                self.right_ax.text(r_nr - 2.5 * text_w, y_lbls[i], y_txt[i], color=self.P.same_type_c, size=text_size,
                                    picker=True, verticalalignment='center', horizontalalignment='left')
             for motif in self.open_motifs:
                 if y_txt[i].lower() == motif.type and motif.show:
@@ -1128,8 +1154,10 @@ class StrudelScore(Base):
 
     def open_chopped_residue(self, map_path, model_path, color='#B2B2B2'):
         res_map = self.open_model(map_path)
+        self.clear_indices.append(res_map.id_string)
         self.run_x(f'volume #{res_map.id_string} sdLevel {SD_LEVEL}')
         res_model = self.open_model(model_path)
+        self.clear_indices.append(res_model.id_string)
         self.run_x(f'color #{res_map.id_string} {color}')
         self.run_x(f'hide #{res_model.id_string} models')
         self.run_x(f'hide #{res_map.id_string} models')
@@ -1142,8 +1170,10 @@ class StrudelScore(Base):
         c = self.active_chain
 
         map_obj = self.open_model(map_path)
+        self.clear_indices.append(map_obj.id_string)
         self.run_x(f'volume #{map_obj.id_string} sdLevel {SD_LEVEL} color {map_color}')
         model_obj = self.open_model(model_path)
+        self.clear_indices.append(model_obj.id_string)
         self.run_x(f'color #{model_obj.id_string} {model_color}')
         # self.run_x(f'color #{model_obj.id_string} {map_color}')
         if matrix:
@@ -1298,8 +1328,10 @@ class StrudelScore(Base):
         res = self.model_obj[0][c][r_nr]
         res_map_path, res_model_path = self.chop_residue(res)
         res_map = self.open_model(res_map_path)
+        self.clear_indices.append(res_map.id_string)
         self.run_x(f'volume #{res_map.id_string} sdLevel {SD_LEVEL}')
         res_model = self.open_model(res_model_path)
+        self.clear_indices.append(res_model.id_string)
         self.run_x(f'size #{res_model.id_string} stickRadius 0.055')
         self.run_x(f'color #{res_map.id_string} #B2B2B2')
         self.run_x(f'transparency #{res_map.id_string} 70 s')
@@ -1317,6 +1349,7 @@ class StrudelScore(Base):
         res = self.model_obj[0][c][r_nr]
         res_map_path, res_model_path = self.chop_residue_environ_sensitive(res)
         res_map = self.open_model(res_map_path)
+        self.clear_indices.append(res_map.id_string)
         self.run_x(f'volume #{res_map.id_string} sdLevel {SD_LEVEL}')
         self.run_x(f'color #{res_map.id_string} #B9BF6C')
         self.run_x(f'transparency #{res_map.id_string} 70 s')
@@ -1477,7 +1510,8 @@ class StrudelScore(Base):
             top_motif_name = 'ala_rotamer_single-conf'
 
 
-        self.run_x('close #3-100')
+        # self.run_x('close #3-100')
+        self.clear_residue_data()
         # self.run_x('show #1,2 models')
         # self.run_x(f'color #1 #00FFFF')
 
@@ -1635,10 +1669,16 @@ class Parameters:
         self.left_plot_min_h = 100
 
         self.left_plots_H = 300# - self.elem_spacing *10
+        # Plots colors
+        self.outlier_c = '#CC3311'
+        self.same_type_c = '#009998'
+        self.very_low_c = '#0077BB'
+        # self.very_low_c = 'b'
+
         # Left plots parameters
-        self.l_same_type_color = 'g'
-        self.l_top_type_color = 'r'
-        self.l_same_type_lowcorr_color = 'b'
+        # self.l_same_type_color = 'g'
+        # self.l_top_type_color = 'r'
+        # self.l_same_type_lowcorr_color = 'b'
         self.l_marker_size = 2.5
         self.l_picker_size = 2.5
         self.l_lbl_size = 6
@@ -1666,6 +1706,7 @@ class Parameters:
         self.left_plot_axis_font = 'font-family: Helvetica; font-size: 14px; font-weight: bold;'
         self.label_titles_style = '{color: rgb(34, 93, 153); font-size: 12px;}'
         self.horisontal_line_color = 'color: rgb(139,139,139);'
+
         # models display
         self.same_map_color = '#26FF53'
         self.same_model_color = '#26FF53'
