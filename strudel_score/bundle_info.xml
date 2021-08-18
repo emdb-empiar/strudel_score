@@ -5,7 +5,7 @@ When uploaded to the ChimeraX toolshed, the bundle
 will be displayed without the ChimeraX- prefix.
 -->
 
-<BundleInfo name="ChimeraX-StrudelScore" version="0.1.7" package="chimerax.strudel_score"
+<BundleInfo name="ChimeraX-StrudelScore" version="0.1.8" package="chimerax.strudel_score"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->

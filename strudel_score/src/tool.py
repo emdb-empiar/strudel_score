@@ -131,11 +131,6 @@ class StrudelScore(Base):
         # main_layout.addStretch(1)
         # self.init_ui()
 
-
-
-        # if CHIMERA_MODE:
-        #     self.integrate()
-
         self.active_lib_path = None
         self.map_path = None
         self.map_chim = None
@@ -183,7 +178,7 @@ class StrudelScore(Base):
     def load_designer_widget(self):
         mw = QWidget()
         uifile = os.path.join(self.basedir, 'ui', 'test_w.ui')
-        print("Load ui")
+        # print("Load ui")
         self.ui = ui = uic.loadUi(uifile, mw)
         # self.ui.setWindowTitle('Strudel score')
         self.chain_selector = ui.chain_comboBox
@@ -257,16 +252,16 @@ class StrudelScore(Base):
     def integrate(self):
         parent = self.ui_tw_area
         layout = QtWidgets.QHBoxLayout()
-        print("Insert main in main")
+        # print("Insert main in main")
         layout.addWidget(self.mw)
         layout.setStretchFactor(self.mw, 0)
         layout.setContentsMargins(0, 0, 0, 0)
         parent.setLayout(layout)
         self.tw.manage(placement=None)
-        print("Integrated")
+        # print("Integrated")
 
     def inject_data(self):
-        print('Inject data called')
+        # print('Inject data called')
         self.fill_selectors()
         self.update_chain_cc_lbls()
         self.fill_files_data()
@@ -306,7 +301,7 @@ class StrudelScore(Base):
 
     def create_menubar1(self, parent):
         mbar = QFrame(parent)
-        mbar.setStyleSheet('QFrame { background-color: white; }')
+        mbar.setStyleSheet('QFrame { background-color: None; }')
         layout = QHBoxLayout(mbar)
         # layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
@@ -354,6 +349,8 @@ class StrudelScore(Base):
     def set_library(self, lib_path=None):
         if lib_path is None:
             lib_path = str(QFileDialog.getExistingDirectory())
+        else:
+            lib_path = os.path.abspath(os.path.expanduser(os.path.expandvars(lib_path)))
 
         files = os.listdir(lib_path)
         files = [f for f in files if f.startswith('motifs_')]
@@ -386,7 +383,6 @@ class StrudelScore(Base):
                 for line in lines:
                     if 'lib_path' in line:
                         path = line.split('=')[-1].strip()
-                        print(path)
         except FileNotFoundError:
             pass
         if path is None:
@@ -414,6 +410,7 @@ class StrudelScore(Base):
         proj_path = None
         if set_path is None:
             set_path = str(QFileDialog.getExistingDirectory())
+        set_path = os.path.abspath(os.path.expanduser(os.path.expandvars(set_path)))
         try:
             folders = os.listdir(set_path)
         except FileNotFoundError:
@@ -501,7 +498,7 @@ class StrudelScore(Base):
 
     def run_x(self, command):
         if CHIMERA_MODE:
-            print(f'Running: {command}')
+            # print(f'Running: {command}')
             try:
                 # returns a list of lists
                 return self.rc.run(command)
@@ -529,6 +526,7 @@ class StrudelScore(Base):
         self.show_mesage('Functionality unavailable', text)
 
     def fill_left_plot_axix_range_selector(self):
+
         combo_box = self.ui.y_axis_range_comboBox
         combo_box.addItems(self.y_axis_ranges)
         if self.df is not None:
@@ -597,18 +595,21 @@ class StrudelScore(Base):
         self.ui.chain_comboBox.currentIndexChanged.connect(self.switch_chain)
         # Y range selector
         combo_box = self.ui.y_axis_range_comboBox
+        self.set_combobox_style1(combo_box)
         if combo_box.currentText() not in self.y_axis_ranges:
             combo_box.addItems(self.y_axis_ranges)
         if self.df is not None:
             combo_box.currentIndexChanged.connect(self.switch_axis_range)
 
         combo_box = self.ui.r_y_axis_range_comboBox
+        self.set_combobox_style1(combo_box)
         if combo_box.currentText() not in self.y_axis_ranges:
             combo_box.addItems(self.right_y_axis_ranges)
         if self.df is not None:
             combo_box.currentIndexChanged.connect(self.switch_right_axis_range)
 
         combo_box = self.ui.res_per_row_comboBox
+        self.set_combobox_style1(combo_box)
         if combo_box.currentText() not in self.res_per_row:
             combo_box.addItems(self.res_per_row)
         combo_box.setCurrentText(self.P.default_res_per_row)
@@ -621,6 +622,19 @@ class StrudelScore(Base):
         combo_box.setCurrentText(self.P.default_metrics)
         if self.df is not None:
             combo_box.currentIndexChanged.connect(self.update_left_plots)
+
+        # self.color_selectors([self.ui.res_per_row_comboBox])
+
+    def set_combobox_style1(self, combo_box):
+        """
+        Custom QComboBox for plots area to make sure the text is visible
+        when dark color scheme is used
+        :param combo_box:
+        :return:
+        """
+        # combo_box.setObjectName("myParentWidget")
+        # combo_box.setStyleSheet('QWidget#myParentWidget { background-color: red}')
+        combo_box.setStyleSheet('QComboBox { color: black}')
 
     def do_nothing(self):
         pass
@@ -648,11 +662,10 @@ class StrudelScore(Base):
         self.open_motifs = []
         self.active_res_map_obj = None
         self.active_res_model_obj = None
-        if CHIMERA_MODE:
-            # self.run_x('close #2-100')
-            print(self.clear_indices)
-            for index in self.clear_indices:
-                self.run_x(f'close #{index}')
+        if CHIMERA_MODE and len(self.clear_indices) > 0:
+            # for index in self.clear_indices:
+            #     self.run_x(f'close #{index}')
+            self.run_x(f'close #{",".join(self.clear_indices)}')
             self.clear_indices = []
 
     def create_left_plots_container(self):
@@ -664,7 +677,7 @@ class StrudelScore(Base):
         x_label = QLabel()
         txt_lst = self.P.x_axis_text
         x_label_text = f'<font style="{self.P.grey_text} {self.P.left_plot_axis_font}">{txt_lst[0]} </font>' \
-                       f'<font style="{self.P.left_plot_axis_font}">{txt_lst[1]}</font>'
+                       f'<font style="color: black; {self.P.left_plot_axis_font}">{txt_lst[1]}</font>'
         x_label.setText(x_label_text)
         x_label.setAlignment(QtCore.Qt.AlignHCenter)
         grid.setSpacing(5)
@@ -679,7 +692,12 @@ class StrudelScore(Base):
         p = lf.palette()
         lf.setAutoFillBackground(True)
         p.setColor(lf.backgroundRole(), QtCore.Qt.white)
+
+
         lf.setPalette(p)
+
+        # lf.setObjectName("myParentWidget")
+        # lf.setStyleSheet('QWidget#myParentWidget { background-color: white}')
 
     def create_right_plot_container(self):
         p = self.P.r_tick_params
@@ -701,11 +719,18 @@ class StrudelScore(Base):
         vlayout = self.ui.right_plot_frame_verticalLayout
         vlayout.insertWidget(1, self.right_plot_canvas)
         vlayout.setContentsMargins(0, 0, 0, 0)
+
         frame = self.ui.right_plot_frame
+
         p = frame.palette()
         frame.setAutoFillBackground(True)
         p.setColor(frame.backgroundRole(), QtCore.Qt.white)
         frame.setPalette(p)
+        #
+        # frame.setObjectName("myParentWidget")
+        # frame.setStyleSheet('QWidget#myParentWidget { background-color: None}')
+
+
         # frame.show()
 
     def navigate_residue(self, direction):
@@ -713,20 +738,18 @@ class StrudelScore(Base):
         if data is None:
             return
 
+        previous_active = self.active_residue
+
         red_res = data[data[self.k.TOP_SAME_TYPE_DIFF] > self.P.red_difference][self.k.RES_NR].tolist()
         avail_res = data[self.k.RES_NR].tolist()
         index = avail_res.index(self.active_residue)
-        self.clear_residue_data()
+
         if direction == 'left':
             if index > 0:
                 self.active_residue = avail_res[index-1]
-                # self.draw_right_plot()
-                # self.draw_left_plot_vline()
         elif direction == 'right':
-            if index < len(avail_res):
+            if index < len(avail_res)-1:
                 self.active_residue = avail_res[index + 1]
-                # self.draw_right_plot()
-                # self.draw_left_plot_vline()
         elif direction == 'red_left':
             red_res = reversed(red_res)
             if index > 0:
@@ -734,23 +757,21 @@ class StrudelScore(Base):
                     if res < self.active_residue:
                         self.active_residue = res
                         break
-                # self.draw_right_plot()
-                # self.draw_left_plot_vline()
         elif direction == 'red_right':
             if index < len(avail_res):
                 for res in red_res:
                     if res > self.active_residue:
                         self.active_residue = res
                         break
-                # self.draw_right_plot()
-                # self.draw_left_plot_vline()
         else:
             return
-        self.draw_right_plot()
-        if CHIMERA_MODE:
-            self.view_residue()
+        if previous_active != self.active_residue:
+            self.clear_residue_data()
             self.draw_right_plot()
-        self.draw_left_plot_vline()
+            if CHIMERA_MODE:
+                self.view_residue()
+                self.draw_right_plot()
+            self.draw_left_plot_vline()
 
     def show_selected_residue(self):
         self.clear_residue_data()
@@ -1202,7 +1223,7 @@ class StrudelScore(Base):
         document.setTextWidth(rect.width())
         txt_lst = self.P.y_axis_text
         document.setHtml(f'<font style="{self.P.grey_text} {self.P.left_plot_axis_font}">{txt_lst[0]} </font>'
-                         f'<font style="{self.P.left_plot_axis_font}">{txt_lst[1]}</font>')
+                         f'<font style="color: black; {self.P.left_plot_axis_font}">{txt_lst[1]}</font>')
         document.drawContents(y_label, rect)
         y_label.end()
         return pic
@@ -1342,7 +1363,7 @@ class StrudelScore(Base):
             self.no_chimera_message()
             return
         if self.active_residue_data is None:
-            print('No data yet')
+            # print('No data yet')
             return
         r_nr = int(self.active_residue)
         c = self.active_chain
@@ -1426,7 +1447,6 @@ class StrudelScore(Base):
         out_map_path = os.path.join(self.tmp, name_prefix + '.mrc')
         out_res_path = os.path.join(self.tmp, name_prefix + '.cif')
         if not os.path.exists(out_map_path) and not os.path.exists(out_res_path):
-            print(res)
             cube_map_obj, shifts = self.chop.chop_cube(res, self.map_obj, 4, zero_origin=False)
             cube_map_obj.grid_resample_emda(0.25)
             cube_map_obj.write_map(os.path.join(self.tmp, name_prefix + 'cube.mrc'))
