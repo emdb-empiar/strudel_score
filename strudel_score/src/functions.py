@@ -219,3 +219,34 @@ def read_config_value(path, key):
         return None
 
 
+
+def set_library(lib_path):
+
+    lib_path = os.path.abspath(os.path.expanduser(os.path.expandvars(lib_path)))
+    if not os.path.exists(lib_path):
+        raise Exception(f'Path {lib_path} does not exist!')
+
+    files = os.listdir(lib_path)
+    files = [f for f in files if f.startswith('motifs_')]
+    if len(files) == 0:
+        raise Exception("Error", f"Could not find strudel libraries in the directory {lib_path}\n"
+                         f"Please select a directory which contain folders named motifs_***")
+
+    record = f'lib_path={lib_path}\n'
+    lines = [record]
+    basedir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(basedir, 'config.txt')
+    try:
+        with open(config_path, 'r') as f:
+            lines = f.readlines()
+            for i, line in enumerate(lines):
+                if 'lib_path' in line:
+                    lines[i] = record
+    except FileNotFoundError:
+        pass
+    with open(config_path, 'w') as f:
+        for line in lines:
+            f.write(line)
+    print('Info', f'Strudel library set to: {lib_path}')
+
+

@@ -26,8 +26,12 @@ def set_library(session, path):
     session_elem = dir(session)
     if 'strudel' not in session_elem:
         get_singleton(session, display=False)
-    session.strudel.set_library(path)
-
+    try:
+        session.strudel.set_library(path)
+    except AttributeError:
+        # This will happen when ran with --nogui option
+        from .functions import set_library
+        set_library(path)
 
 def register_strudel_start(logger):
     desc = CmdDesc(

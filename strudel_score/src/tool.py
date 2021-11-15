@@ -348,10 +348,14 @@ class StrudelScore(Base):
 
     def set_library(self, lib_path=None):
         if lib_path is None:
-            lib_path = str(QFileDialog.getExistingDirectory())
+            if self.libs_path is None:
+                lib_path = str(QFileDialog.getExistingDirectory())
+            else:
+                lib_path = str(QFileDialog.getExistingDirectory(self.ui, 'Select a directory', self.libs_path))
         else:
             lib_path = os.path.abspath(os.path.expanduser(os.path.expandvars(lib_path)))
-
+        if not os.path.exists(lib_path):
+            return
         files = os.listdir(lib_path)
         files = [f for f in files if f.startswith('motifs_')]
         if len(files) == 0:
